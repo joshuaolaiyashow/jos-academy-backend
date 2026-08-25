@@ -18,13 +18,30 @@ enum UserRole {
   INSTRUCTOR
 }
 
+enum VerificationType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  name         String
-  password     String
-  referralCode String?
-  role         UserRole @default(USER)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String         @id @default(uuid())
+  email           String         @unique
+  name            String
+  password        String
+  referralCode    String?        @unique
+  isEmailVerified Boolean        @default(false)
+  role            UserRole       @default(USER)
+  verifications   Verification[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model Verification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      VerificationType
+  token     String           @unique
+  expiresAt DateTime
+  createdAt DateTime         @default(now())
 }
