@@ -129,4 +129,25 @@ export class NotificationService {
     `;
     return this.sendEmail({ to, subject, html });
   }
+
+  /**
+   * Send Password Reset OTP Email
+   */
+  async sendPasswordResetOtpEmail(to: string, otp: string) {
+    const subject = 'Reset Your Password OTP - JOS Academy';
+    const html = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px;">
+        <h2>Password Reset Request 🔐</h2>
+        <p>You requested to reset your password. Use the 6-digit OTP code below:</p>
+        <div style="margin: 20px 0;">
+          <h1 style="background-color: #f4f4f5; padding: 12px 24px; display: inline-block; letter-spacing: 6px; color: #111; border-radius: 6px;">
+            ${otp}
+          </h1>
+        </div>
+        <p style="color: #666; font-size: 14px;">This code will expire in <strong>1 hour</strong>.</p>
+        <p style="color: #888; font-size: 13px;">If you did not request a password reset, please ignore this email.</p>
+      </div>
+    `;
+    return this.sendEmail({ to, subject, html });
+  }
 }
