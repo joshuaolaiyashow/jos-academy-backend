@@ -6,7 +6,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgetPasswordDto } from './dto/forget-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { generateOtp, generateReferralCode } from '../utils';
+import { generateReferralCode } from '../utils';
 import { UserRole, VerificationType } from '../generated/prisma/client';
 import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
@@ -107,7 +107,7 @@ export class AuthService {
 
     // 4. Generate JWT Access Token
     const payload = {
-      id: user.id,
+      sub: user.id,
       email: user.email,
       role: user.role,
     };
@@ -173,7 +173,7 @@ export class AuthService {
   }
 
   /**
-   * Initiate Forgot Password flow (generates 6-digit OTP with 1 hour expiration)
+   * Initiate Forgot Password flow (generates random link token with 1 hour expiration)
    */
   async forgetPassword(body: ForgetPasswordDto) {
     const { email } = body;
@@ -187,11 +187,11 @@ export class AuthService {
       throw new NotFoundException('User with this email address does not exist');
     }
 
-    // 2. Generate 6-digit OTP and set 1-hour expiry (1 * 60 * 60 * 1000 ms)
-    const token = generateOtp(6);
+    // 2. Generate 32-byte hex token and set 1-hour expiry (1 * 60 * 60 * 1000 ms)
+    const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour expiry
 
-    // 3. Delete existing PASSWORD_RESET tokens for this user, then create a new one
+    // 3. Delete existing PASSWORD_RESET tokens for this user
     await this.prisma.verification.deleteMany({
       where: {
         userId: user.id,
@@ -199,6 +199,7 @@ export class AuthService {
       },
     });
 
+    // 4. Create new Verification record
     await this.prisma.verification.create({
       data: {
         userId: user.id,
@@ -208,54 +209,48 @@ export class AuthService {
       },
     });
 
-    // 4. Send OTP email via NotificationService
-    await this.notificationService.sendPasswordResetOtpEmail(user.email, token);
+    // 5. Send password reset link email via NotificationService
+    const appUrl = process.env.APP_URL!;
+    const resetLink = `${appUrl}/auth/reset-password?token=${token}`;
+    await this.notificationService.sendPasswordResetLinkEmail(user.email, user.name, resetLink);
 
     return {
-      message: 'Password reset OTP code has been sent to your email address.',
+      message: 'Password reset link has been sent to your email address.',
     };
   }
 
   /**
-   * Complete Reset Password using the 6-digit OTP code and new password
+   * Complete Reset Password using the link token and new password
    */
   async resetPassword(body: ResetPasswordDto) {
-    const { email, otp, newPassword } = body;
+    const { token, newPassword } = body;
 
-    // 1. Find user by email
-    const user = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User with this email address does not exist');
+    if (!token) {
+      throw new BadRequestException('Reset token is required');
     }
 
-    // 2. Find matching PASSWORD_RESET verification token
-    const verification = await this.prisma.verification.findFirst({
-      where: {
-        userId: user.id,
-        token: otp,
-        type: VerificationType.PASSWORD_RESET,
-      },
+    // 1. Find matching PASSWORD_RESET verification token
+    const verification = await this.prisma.verification.findUnique({
+      where: { token },
+      include: { user: true },
     });
 
-    if (!verification) {
-      throw new BadRequestException('Invalid OTP code');
+    if (!verification || verification.type !== VerificationType.PASSWORD_RESET) {
+      throw new BadRequestException('Invalid or non-existent password reset link');
     }
 
-    // 3. Check if OTP has expired
+    // 2. Check if token has expired
     if (verification.expiresAt < new Date()) {
-      throw new BadRequestException('OTP code has expired. Please request a new password reset.');
+      throw new BadRequestException('Password reset link has expired. Please request a new password reset.');
     }
 
-    // 4. Hash new password
+    // 3. Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // 5. Update user password and delete used verification record
+    // 4. Update user password and delete used verification record
     await this.prisma.$transaction([
       this.prisma.user.update({
-        where: { id: user.id },
+        where: { id: verification.userId },
         data: { password: hashedPassword },
       }),
       this.prisma.verification.delete({
@@ -263,7 +258,7 @@ export class AuthService {
       }),
     ]);
 
-    this.logger.log(`✅ Password reset successfully for user: ${user.email}`);
+    this.logger.log(`✅ Password reset successfully for user: ${verification.user.email}`);
 
     return {
       message: 'Password reset successfully. You can now log in with your new password.',

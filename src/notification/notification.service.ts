@@ -29,7 +29,10 @@ export class NotificationService {
    */
   async sendEmail(options: SendEmailOptions) {
     try {
-      const fromAddress = options.from || this.defaultFrom;
+      const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+      const fromName = process.env.RESEND_FROM_NAME;
+      const fromAddress = options.from || (fromName ? `${fromName} <${fromEmail}>` : fromEmail);
+
       const data = await this.resend.emails.send({
         from: fromAddress,
         to: options.to,
@@ -91,25 +94,33 @@ export class NotificationService {
   }
 
   /**
-   * Send Password Reset Email with link / token
+   * Send Password Reset Link Email
    */
-  async sendPasswordResetEmail(to: string, resetToken: string) {
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
-    const subject = 'Reset Your Password - JOS Academy';
-    const html = `
-      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-        <h2>Password Reset Request 🔐</h2>
-        <p>You requested to reset your password. Click the link below to proceed:</p>
-        <p style="margin: 20px 0;">
-          <a href="${resetUrl}" style="background-color: #0070f3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-            Reset Password
-          </a>
-        </p>
-        <p>If you did not request this, please ignore this email.</p>
-        <p>This link will expire shortly.</p>
-      </div>
-    `;
-    return this.sendEmail({ to, subject, html });
+  async sendPasswordResetLinkEmail(email: string, name: string, resetLink: string) {
+    try {
+      await this.sendEmail({
+        to: email,
+        subject: 'Reset Your Password - JOS Academy',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px;">
+            <h2 style="color: #111;">Password Reset Request 🔐</h2>
+            <p>Hello ${name},</p>
+            <p>We received a request to reset your password for your JOS Academy account. Click the button below to set a new password:</p>
+            <div style="margin: 30px 0;">
+              <a href="${resetLink}" style="background-color: #0070f3; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                Reset Password
+              </a>
+            </div>
+            <p style="color: #666; font-size: 14px;">Or copy and paste this link into your browser:</p>
+            <p style="word-break: break-all; color: #0070f3; font-size: 14px;">${resetLink}</p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+            <p style="color: #888; font-size: 13px;">This password reset link will expire in 1 hour. If you did not request a password reset, please ignore this email.</p>
+          </div>
+        `,
+      });
+    } catch (emailError: any) {
+      this.logger.error(`Failed to send password reset email to ${email}:`, emailError?.message);
+    }
   }
 
   /**

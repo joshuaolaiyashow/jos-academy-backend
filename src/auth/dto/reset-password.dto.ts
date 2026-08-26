@@ -1,22 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 
 export class ResetPasswordDto {
   @ApiProperty({
-    example: 'user@example.com',
-    description: 'Email address associated with the account',
-  })
-  @IsEmail({}, { message: 'Invalid email address' })
-  @IsNotEmpty({ message: 'Email is required' })
-  email: string;
-
-  @ApiProperty({
-    example: '492018',
-    description: '6-digit OTP received in email',
+    example: 'a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890',
+    description: 'Password reset token received in email link',
   })
   @IsString()
-  @IsNotEmpty({ message: 'OTP is required' })
-  otp: string;
+  @IsNotEmpty({ message: 'Token is required' })
+  token: string;
 
   @ApiProperty({
     example: 'NewSecurePassword123!',
