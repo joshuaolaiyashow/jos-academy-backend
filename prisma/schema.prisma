@@ -13,16 +13,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole {
-  USER
-  INSTRUCTOR
-}
-
-enum VerificationType {
-  EMAIL_VERIFICATION
-  PASSWORD_RESET
-}
-
 model User {
   id              String         @id @default(uuid())
   email           String         @unique
@@ -44,4 +34,51 @@ model Verification {
   token     String           @unique
   expiresAt DateTime
   createdAt DateTime         @default(now())
+}
+
+model Course {
+  id                String @id @default(uuid)
+  name              String 
+  shortDescription  String 
+  fullDescription   String 
+  heroImageName     String?
+  duration          Int 
+  durationType      DurationType
+  targetLevel       TargetLevel
+  maxCohortSize     Int 
+  tuitionFee        Int 
+  certificationOffered Boolean?
+  capstoneRequired     Boolean?
+  careerSupportIncluded Boolean?
+}
+
+model Modules {
+  id              String @id @default(uuid)
+  title           String
+  description     String 
+  lessonsCount    Int
+  assignmentsCount Int
+  courseId String
+}
+
+
+enum UserRole {
+  USER
+  INSTRUCTOR
+}
+
+enum VerificationType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum DurationType {
+  weeks
+  Months
+}
+
+enum TargetLevel {
+  Foundation
+  Intermediate
+  Advanced
 }
