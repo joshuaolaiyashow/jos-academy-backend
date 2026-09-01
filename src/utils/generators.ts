@@ -32,3 +32,37 @@ export function generateReferralCode(length: number = 8, prefix: string = ''): s
 
   return prefix ? `${prefix.toUpperCase()}-${randomStr}` : randomStr;
 }
+
+/**
+ * Generates a cryptographically secure random temporary password containing
+ * uppercase, lowercase, numbers, and special characters.
+ * @param length Length of the password (default is 12)
+ */
+export function generateRandomPassword(length: number = 12): string {
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  const symbols = '!@#$%^&*()_+-=';
+  const allChars = uppercase + lowercase + numbers + symbols;
+
+  const bytes = randomBytes(length);
+  let passwordArr: string[] = [];
+
+  // Guarantee at least one character from each required set
+  passwordArr.push(uppercase[bytes[0] % uppercase.length]);
+  passwordArr.push(lowercase[bytes[1] % lowercase.length]);
+  passwordArr.push(numbers[bytes[2] % numbers.length]);
+  passwordArr.push(symbols[bytes[3] % symbols.length]);
+
+  for (let i = 4; i < length; i++) {
+    passwordArr.push(allChars[bytes[i] % allChars.length]);
+  }
+
+  // Shuffle using Fisher-Yates
+  for (let i = passwordArr.length - 1; i > 0; i--) {
+    const j = bytes[i] % (i + 1);
+    [passwordArr[i], passwordArr[j]] = [passwordArr[j], passwordArr[i]];
+  }
+
+  return passwordArr.join('');
+}

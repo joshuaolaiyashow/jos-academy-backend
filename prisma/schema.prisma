@@ -14,16 +14,21 @@ datasource db {
 }
 
 model User {
-  id              String         @id @default(uuid())
-  email           String         @unique
-  name            String
-  password        String
-  referralCode    String?        @unique
-  isEmailVerified Boolean        @default(false)
-  role            UserRole       @default(USER)
-  verifications   Verification[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                 String            @id @default(uuid())
+  email              String            @unique
+  name               String
+  password           String
+  referralCode       String?           @unique
+  isEmailVerified    Boolean           @default(false)
+  role               UserRole          @default(USER)
+  phone              String?
+  country            String?
+  fieldOfExpertise   String?
+  teachingExperience String?
+  availability       AvailabilityType?
+  verifications      Verification[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 }
 
 model Verification {
@@ -89,4 +94,9 @@ enum TargetLevel {
   Foundation
   Intermediate
   Advanced
+}
+
+enum AvailabilityType {
+  FULL_TIME
+  PART_TIME
 }

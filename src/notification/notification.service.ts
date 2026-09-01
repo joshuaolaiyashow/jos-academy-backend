@@ -161,4 +161,42 @@ export class NotificationService {
     `;
     return this.sendEmail({ to, subject, html });
   }
+
+  /**
+   * Send Onboarding Credentials Email to a newly created Creator / Instructor
+   */
+  async sendCreatorCredentialsEmail(email: string, name: string, tempPassword: string) {
+    const loginUrl = `${process.env.APP_URL || 'http://localhost:3000'}/auth/sign-in`;
+
+    try {
+      await this.sendEmail({
+        to: email,
+        subject: 'Welcome to JOS Academy - Your Creator Account Credentials',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 600px;">
+            <h2 style="color: #111;">Welcome to JOS Academy, ${name}! 🎉</h2>
+            <p>An Admin has created your <strong>Creator / Instructor</strong> account on JOS Academy.</p>
+            <p>Here are your login credentials:</p>
+            
+            <div style="background-color: #f4f4f5; padding: 15px 20px; border-radius: 8px; margin: 20px 0;">
+              <p style="margin: 5px 0;"><strong>Email Address:</strong> ${email}</p>
+              <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code style="background-color: #e4e4e7; padding: 2px 8px; border-radius: 4px; font-size: 16px;">${tempPassword}</code></p>
+            </div>
+
+            <div style="margin: 25px 0;">
+              <a href="${loginUrl}" style="background-color: #0070f3; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                Log In to Your Account
+              </a>
+            </div>
+
+            <p style="color: #666; font-size: 14px;">We strongly recommend changing your password after logging in for the first time.</p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+            <p style="color: #888; font-size: 13px;">If you have any questions, please contact the JOS Academy Admin team.</p>
+          </div>
+        `,
+      });
+    } catch (emailError: any) {
+      this.logger.error(`Failed to send creator credentials email to ${email}:`, emailError?.message);
+    }
+  }
 }
