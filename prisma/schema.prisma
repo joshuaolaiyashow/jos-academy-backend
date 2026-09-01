@@ -37,34 +37,42 @@ model Verification {
 }
 
 model Course {
-  id                String @id @default(uuid)
-  name              String 
-  shortDescription  String 
-  fullDescription   String 
-  heroImageName     String?
-  duration          Int 
-  durationType      DurationType
-  targetLevel       TargetLevel
-  maxCohortSize     Int 
-  tuitionFee        Int 
-  certificationOffered Boolean?
-  capstoneRequired     Boolean?
+  id                    String     @id @default(uuid())
+  name                  String
+  shortDescription      String
+  fullDescription       String
+  heroImageName         String?
+  duration              Int
+  durationType          DurationType
+  targetLevel           TargetLevel
+  maxCohortSize         Int
+  tuitionFee            Int
+  certificationOffered  Boolean?
+  capstoneRequired      Boolean?
   careerSupportIncluded Boolean?
+
+  modules               Modules[]
+  
+    @@index([id])
 }
 
 model Modules {
-  id              String @id @default(uuid)
-  title           String
-  description     String 
-  lessonsCount    Int
+  id               String @id @default(uuid())
+  title            String
+  description      String
+  lessonsCount     Int
   assignmentsCount Int
-  courseId String
-}
 
+  courseId         String
+  course           Course @relation(fields: [courseId], references: [id])
+
+  @@index([courseId])
+}
 
 enum UserRole {
   USER
   INSTRUCTOR
+  ADMIN
 }
 
 enum VerificationType {
