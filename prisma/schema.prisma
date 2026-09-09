@@ -46,15 +46,22 @@ model Course {
   name                  String
   shortDescription      String
   fullDescription       String
-  heroImageName         String?
   duration              Int
   durationType          DurationType
   targetLevel           TargetLevel
   maxCohortSize         Int
   tuitionFee            Int
+  costCredit            Int
+  targetLevel           String
+  startDate             DateTime
+  certificateOffered    Boolean?
+  capstoneProject       Boolean?
+  careerSupport         Boolean? 
   certificationOffered  Boolean?
   capstoneRequired      Boolean?
   careerSupportIncluded Boolean?
+  heroImage             String
+  category              String
 
   modules               Modules[]
   
@@ -65,13 +72,22 @@ model Modules {
   id               String @id @default(uuid())
   title            String
   description      String
-  lessonsCount     Int
-  assignmentsCount Int
+  lesson           Int
+  assignmentsCount Int?
 
   courseId         String
   course           Course @relation(fields: [courseId], references: [id])
+  assignment       Assignments[]
 
   @@index([courseId])
+}
+
+model Assignments{
+  id                String @id @default(uuid())
+  moduleId          String
+  module            Modules
+
+  @@index([id, moduleId])
 }
 
 enum UserRole {

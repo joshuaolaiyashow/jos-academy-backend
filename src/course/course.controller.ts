@@ -1,5 +1,24 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import 'multer';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CourseService } from './course.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -15,13 +34,30 @@ export class CourseController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('heroImage', {
+      limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB limit for course hero image
+      },
+    }),
+  )
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Create a new course (Admin only)' })
+  @ApiOperation({
+    summary: 'Create a new course with optional hero image file upload (Admin only)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    type: CreateCourseDto,
+    description: 'Course creation data with optional heroImage file',
+  })
   @ApiResponse({ status: 201, description: 'Course created successfully.' })
   @ApiResponse({ status: 401, description: 'Unauthorized - Token missing or invalid.' })
   @ApiResponse({ status: 403, description: 'Forbidden - Only Admin role can create courses.' })
-  async createCourse(@Body() createCourseDto: CreateCourseDto) {
-    return this.courseService.createCourse(createCourseDto);
+  async createCourse(
+    @Body() createCourseDto: CreateCourseDto,
+    @UploadedFile() heroImage?: Express.Multer.File,
+  ) {
+    return this.courseService.createCourse(createCourseDto, heroImage);
   }
 
   @Get()

@@ -1,22 +1,39 @@
+import 'multer';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { FileUploadService } from '../file-upload/file-upload.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 
 @Injectable()
 export class CourseService {
   private readonly logger = new Logger(CourseService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fileUploadService: FileUploadService,
+  ) {}
 
   /**
-   * Create a new course with optional nested modules
+   * Create a new course with optional heroImage file upload and nested modules
    */
-  async createCourse(dto: CreateCourseDto) {
-    const { modules, ...courseData } = dto;
+  async createCourse(dto: CreateCourseDto, heroImageFile?: Express.Multer.File) {
+    const { modules, heroImage, ...courseData } = dto;
+
+    let heroImageName = courseData.heroImageName;
+
+    // If hero image file is uploaded, upload to AWS S3
+    if (heroImageFile) {
+      const uploadResult = await this.fileUploadService.uploadFile(
+        heroImageFile,
+        'courses',
+      );
+      heroImageName = uploadResult.url;
+    }
 
     const course = await this.prisma.course.create({
       data: {
         ...courseData,
+        heroImageName,
         modules:
           modules && modules.length > 0
             ? {

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
@@ -34,6 +34,7 @@ export class CreateModuleDto {
     example: 12,
     description: 'Number of lessons in this module',
   })
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   lessonsCount: number;
@@ -42,6 +43,7 @@ export class CreateModuleDto {
     example: 4,
     description: 'Number of assignments in this module',
   })
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   assignmentsCount: number;
@@ -74,8 +76,16 @@ export class CreateCourseDto {
   fullDescription: string;
 
   @ApiPropertyOptional({
-    example: 'fullstack-hero.png',
-    description: 'Hero image filename or URL',
+    type: 'string',
+    format: 'binary',
+    description: 'Hero image file for the course (JPEG, PNG, WebP)',
+  })
+  @IsOptional()
+  heroImage?: any;
+
+  @ApiPropertyOptional({
+    example: 'https://jos-academy.s3.us-east-1.amazonaws.com/courses/example.png',
+    description: 'Hero image filename or URL (optional if uploading file)',
   })
   @IsOptional()
   @IsString()
@@ -85,6 +95,7 @@ export class CreateCourseDto {
     example: 12,
     description: 'Duration quantity (e.g., 12)',
   })
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   duration: number;
@@ -109,6 +120,7 @@ export class CreateCourseDto {
     example: 30,
     description: 'Maximum number of students per cohort',
   })
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   maxCohortSize: number;
@@ -117,6 +129,7 @@ export class CreateCourseDto {
     example: 150000,
     description: 'Tuition fee in local currency',
   })
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   tuitionFee: number;
@@ -126,6 +139,7 @@ export class CreateCourseDto {
     description: 'Whether a certificate is offered upon completion',
   })
   @IsOptional()
+  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
   @IsBoolean()
   certificationOffered?: boolean;
 
@@ -134,6 +148,7 @@ export class CreateCourseDto {
     description: 'Whether a capstone project is required',
   })
   @IsOptional()
+  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
   @IsBoolean()
   capstoneRequired?: boolean;
 
@@ -142,14 +157,25 @@ export class CreateCourseDto {
     description: 'Whether career support is included',
   })
   @IsOptional()
+  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
   @IsBoolean()
   careerSupportIncluded?: boolean;
 
   @ApiPropertyOptional({
     type: [CreateModuleDto],
-    description: 'List of course modules',
+    description: 'List of course modules (JSON string or object array)',
   })
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateModuleDto)
