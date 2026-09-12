@@ -91,6 +91,14 @@ export class CreateCourseDto {
   @IsString()
   heroImageName?: string;
 
+  @ApiPropertyOptional({
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    description: 'ID of the category this course belongs to',
+  })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
   @ApiProperty({
     example: 12,
     description: 'Duration quantity (e.g., 12)',

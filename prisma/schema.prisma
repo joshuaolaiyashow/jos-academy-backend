@@ -41,51 +41,58 @@ model Verification {
   createdAt DateTime         @default(now())
 }
 
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  courses     Course[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model Course {
-  id                    String     @id @default(uuid())
+  id                    String        @id @default(uuid())
   name                  String
   shortDescription      String
   fullDescription       String
+  heroImageName         String?
   duration              Int
   durationType          DurationType
   targetLevel           TargetLevel
   maxCohortSize         Int
   tuitionFee            Int
-  costCredit            Int
-  targetLevel           String
-  startDate             DateTime
-  certificateOffered    Boolean?
-  capstoneProject       Boolean?
-  careerSupport         Boolean? 
   certificationOffered  Boolean?
   capstoneRequired      Boolean?
   careerSupportIncluded Boolean?
-  heroImage             String
-  category              String
+
+  categoryId            String?
+  category              Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   modules               Modules[]
   
-    @@index([id])
+  @@index([id])
+  @@index([categoryId])
 }
 
 model Modules {
-  id               String @id @default(uuid())
+  id               String        @id @default(uuid())
   title            String
   description      String
-  lesson           Int
+  lessonsCount     Int
   assignmentsCount Int?
 
   courseId         String
-  course           Course @relation(fields: [courseId], references: [id])
-  assignment       Assignments[]
+  course           Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  assignments      Assignments[]
 
   @@index([courseId])
 }
 
-model Assignments{
-  id                String @id @default(uuid())
-  moduleId          String
-  module            Modules
+model Assignments {
+  id               String        @id @default(uuid())
+  title            String?
+  moduleId         String
+  module           Modules       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@index([id, moduleId])
 }

@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -16,6 +17,7 @@ import {
   ApiConsumes,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -43,14 +45,15 @@ export class CourseController {
   )
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: 'Create a new course with optional hero image file upload (Admin only)',
+    summary: 'Create a new course with optional hero image file upload and category (Admin only)',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     type: CreateCourseDto,
-    description: 'Course creation data with optional heroImage file',
+    description: 'Course creation data with optional heroImage file and categoryId',
   })
   @ApiResponse({ status: 201, description: 'Course created successfully.' })
+  @ApiResponse({ status: 400, description: 'Bad Request - Validation error or non-existent category.' })
   @ApiResponse({ status: 401, description: 'Unauthorized - Token missing or invalid.' })
   @ApiResponse({ status: 403, description: 'Forbidden - Only Admin role can create courses.' })
   async createCourse(
@@ -61,10 +64,16 @@ export class CourseController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all courses' })
-  @ApiResponse({ status: 200, description: 'List of all courses with modules.' })
-  async getCourses() {
-    return this.courseService.getCourses();
+  @ApiOperation({ summary: 'Get all courses (optionally filtered by category)' })
+  @ApiQuery({
+    name: 'categoryId',
+    required: false,
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    description: 'Optional Category ID to filter courses by category',
+  })
+  @ApiResponse({ status: 200, description: 'List of all matching courses with category and modules.' })
+  async getCourses(@Query('categoryId') categoryId?: string) {
+    return this.courseService.getCourses(categoryId);
   }
 
   @Get(':id')
