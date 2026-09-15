@@ -16,6 +16,14 @@ async function bootstrap() {
     }),
   );
 
+  // open CORS for all origins (you can customize this for production)
+  const allowedOrigins = ["https://jos-academy.d2edm0lxslfxbn.amplifyapp.com/", "http://localhost:3000"];
+  app.enableCors({
+    origin: allowedOrigins,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Accept, Authorization',
+  });
+
   // Swagger OpenAPI Configuration
   const config = new DocumentBuilder()
     .setTitle('JOS Server API')
