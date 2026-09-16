@@ -114,13 +114,4 @@ export class CourseService {
 
     return course;
   }
-
-  async enrollUserInCourse() {
-    try {
-      const payment = await this.paymentService.initializePayment({amount: 1000, email: 'user@example.com'});
-      console.log(payment)
-    } catch (error) {
-      throw new BadRequestException('Failed to initialize payment');
-    }
-  }
 }

@@ -6,7 +6,7 @@ import { FileUploadModule } from '../file-upload/file-upload.module';
 import { PaymentModule } from 'src/payment/payment.module';
 
 @Module({
-  imports: [PrismaModule, FileUploadModule, PaymentModule],
+  imports: [PrismaModule, FileUploadModule],
   providers: [CourseService],
   controllers: [CourseController],
   exports: [CourseService],

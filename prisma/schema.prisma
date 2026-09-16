@@ -27,6 +27,8 @@ model User {
   teachingExperience String?
   availability       AvailabilityType?
   verifications      Verification[]
+  enrollments        Enrollment[]
+  payments           Payment[]
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 }
@@ -69,21 +71,25 @@ model Course {
   category              Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   modules               Modules[]
+  enrollments           Enrollment[]
+  payments              Payment[]
   
   @@index([id])
   @@index([categoryId])
 }
 
 model Modules {
-  id               String        @id @default(uuid())
+  id               String           @id @default(uuid())
   title            String
   description      String
   lessonsCount     Int
   assignmentsCount Int?
 
   courseId         String
-  course           Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  course           Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
   assignments      Assignments[]
+  enrolledModules  EnrolledModule[]
+  payments         Payment[]
 
   @@index([courseId])
 }
@@ -95,6 +101,66 @@ model Assignments {
   module           Modules       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@index([id, moduleId])
+}
+
+model Enrollment {
+  id              String            @id @default(uuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId        String
+  course          Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  type            EnrollmentType    @default(FULL_COURSE)
+  status          EnrollmentStatus  @default(PENDING)
+
+  enrolledModules EnrolledModule[]
+  payments        Payment[]
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+model EnrolledModule {
+  id           String     @id @default(uuid())
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  moduleId     String
+  module       Modules    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  unlockedAt   DateTime   @default(now())
+
+  @@unique([enrollmentId, moduleId])
+  @@index([enrollmentId])
+  @@index([moduleId])
+}
+
+model Payment {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId     String
+  course       Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  moduleId     String?
+  module       Modules?      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  enrollmentId String?
+  enrollment   Enrollment?   @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+
+  amount       Int           // Amount in Naira
+  reference    String        @unique // Paystack transaction reference
+  status       PaymentStatus @default(PENDING)
+  type         PaymentType
+
+  paidAt       DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([reference])
 }
 
 enum UserRole {
@@ -122,4 +188,27 @@ enum TargetLevel {
 enum AvailabilityType {
   FULL_TIME
   PART_TIME
+}
+
+enum EnrollmentType {
+  FULL_COURSE
+  MODULAR
+}
+
+enum EnrollmentStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+}
+
+enum PaymentType {
+  FULL_COURSE
+  MODULE
 }

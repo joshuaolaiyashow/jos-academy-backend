@@ -63,28 +63,6 @@ export class CourseController {
     return this.courseService.createCourse(createCourseDto, heroImage);
   }
 
-  @Post('enroll')
-  // @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Enroll a user in a course (Authenticated users only)' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        userId: { type: 'string', example: 'user-uuid' },
-        courseId: { type: 'string', example: 'course-uuid' },
-      },
-      required: ['userId', 'courseId'],
-    },
-  })
-  @ApiResponse({ status: 200, description: 'User enrolled in course successfully.' })
-  @ApiResponse({ status: 400, description: 'Bad Request - Validation error or enrollment failed.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized - Token missing or invalid.' })
-  async enrollUserInCourse(@Body() body: { userId: string; courseId: string }) {
-    const { userId, courseId } = body;
-    return this.courseService.enrollUserInCourse();
-  }
-
   @Get()
   @ApiOperation({ summary: 'Get all courses (optionally filtered by category)' })
   @ApiQuery({

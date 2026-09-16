@@ -9,6 +9,7 @@ import { CreatorModule } from './creator/creator.module';
 import { FileUploadModule } from './file-upload/file-upload.module';
 import { CategoryModule } from './category/category.module';
 import { PaymentModule } from './payment/payment.module';
+import { EnrollmentModule } from './enrollment/enrollment.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PaymentModule } from './payment/payment.module';
     FileUploadModule,
     CategoryModule,
     PaymentModule,
+    EnrollmentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
