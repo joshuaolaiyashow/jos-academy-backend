@@ -4,7 +4,8 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface JwtPayload {
-  id: string;
+  sub?: string;
+  id?: string;
   email: string;
   role: string;
 }
@@ -15,13 +16,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET!,
+      secretOrKey: process.env.JWT_SECRET || 'super_secret_jwt_key_jos_academy_2026',
     });
   }
 
   async validate(payload: JwtPayload) {
+    const userId = payload.sub || payload.id;
+
+    if (!userId) {
+      throw new UnauthorizedException('Invalid token payload');
+    }
+
     const user = await this.prisma.user.findUnique({
-      where: { id: payload.id },
+      where: { id: userId },
       select: {
         id: true,
         email: true,
@@ -38,7 +45,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     if (!user.isEmailVerified) {
-      throw new UnauthorizedException('Please verify your email address to access this resource');
+      throw new UnauthorizedException(
+        'Please verify your email address to access this resource',
+      );
     }
 
     return user;

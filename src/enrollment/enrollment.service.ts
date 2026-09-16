@@ -30,6 +30,7 @@ export class EnrollmentService {
    * Calculates pricing and returns Paystack authorization URL
    */
   async initiateEnrollment(userId: string, dto: InitiateEnrollmentDto) {
+    console.log("userId", userId)
     const { courseId, type, moduleId } = dto;
 
     // 1. Fetch user

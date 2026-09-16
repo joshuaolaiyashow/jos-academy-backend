@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Headers,
-  Param,
+  HttpCode,
+  HttpStatus,
   Post,
   Query,
   Req,
@@ -11,8 +13,8 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiOperation,
-  ApiParam,
   ApiQuery,
   ApiResponse,
   ApiTags,
@@ -69,38 +71,26 @@ export class EnrollmentController {
     return this.enrollmentService.initiateEnrollment(req.user.id, initiateDto);
   }
 
-  @Get('verify/:reference')
+  @Post('webhook')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Verify Paystack payment reference and activate course/module enrollment',
+      'Paystack webhook listener (automatically activates enrollment upon payment)',
   })
-  @ApiParam({
-    name: 'reference',
-    example: 'JOS-ENR-1725700000000-A1B2C3D4',
-    description: 'Paystack transaction reference',
+  @ApiHeader({
+    name: 'x-paystack-signature',
+    description: 'HMAC SHA512 signature from Paystack',
+    required: true,
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment verified and enrollment activated.',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad Request - Payment failed or invalid reference.',
-  })
-  async verifyEnrollment(@Param('reference') reference: string) {
-    return this.enrollmentService.verifyEnrollment(reference);
-  }
-
-  @Post('webhook')
-  @ApiOperation({ summary: 'Paystack webhook listener' })
-  @ApiResponse({ status: 200, description: 'Webhook processed.' })
+  @ApiResponse({ status: 200, description: 'Webhook received and processed.' })
+  @ApiResponse({ status: 400, description: 'Invalid webhook signature.' })
   async handleWebhook(
     @Headers('x-paystack-signature') signature: string,
     @Body() body: any,
   ) {
     const isValid = this.paymentService.verifyWebhookSignature(signature, body);
     if (!isValid) {
-      return { status: 'invalid signature' };
+      throw new BadRequestException('Invalid Paystack webhook signature');
     }
     return this.enrollmentService.handleWebhook(body);
   }

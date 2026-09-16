@@ -12,7 +12,6 @@ export class CourseService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fileUploadService: FileUploadService,
-    private readonly paymentService: PaymentService,
   ) {}
 
   /**
