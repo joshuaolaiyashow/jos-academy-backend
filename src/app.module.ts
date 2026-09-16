@@ -8,6 +8,7 @@ import { CourseModule } from './course/course.module';
 import { CreatorModule } from './creator/creator.module';
 import { FileUploadModule } from './file-upload/file-upload.module';
 import { CategoryModule } from './category/category.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { CategoryModule } from './category/category.module';
     CreatorModule,
     FileUploadModule,
     CategoryModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

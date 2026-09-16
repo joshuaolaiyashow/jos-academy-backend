@@ -3,6 +3,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service';
 import { FileUploadService } from '../file-upload/file-upload.service';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { PaymentService } from 'src/payment/payment.service';
 
 @Injectable()
 export class CourseService {
@@ -11,6 +12,7 @@ export class CourseService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fileUploadService: FileUploadService,
+    private readonly paymentService: PaymentService,
   ) {}
 
   /**
@@ -111,5 +113,14 @@ export class CourseService {
     }
 
     return course;
+  }
+
+  async enrollUserInCourse() {
+    try {
+      const payment = await this.paymentService.initializePayment({amount: 1000, email: 'user@example.com'});
+      console.log(payment)
+    } catch (error) {
+      throw new BadRequestException('Failed to initialize payment');
+    }
   }
 }
