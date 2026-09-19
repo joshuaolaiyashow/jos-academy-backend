@@ -26,9 +26,11 @@ model User {
   fieldOfExpertise   String?
   teachingExperience String?
   availability       AvailabilityType?
+  credits            Int               @default(0)
   verifications      Verification[]
   enrollments        Enrollment[]
   payments           Payment[]
+  creditTransactions CreditTransaction[]
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 }
@@ -63,6 +65,7 @@ model Course {
   targetLevel           TargetLevel
   maxCohortSize         Int
   tuitionFee            Int
+  costCredit            Int?
   certificationOffered  Boolean?
   capstoneRequired      Boolean?
   careerSupportIncluded Boolean?
@@ -73,6 +76,7 @@ model Course {
   modules               Modules[]
   enrollments           Enrollment[]
   payments              Payment[]
+  creditTransactions    CreditTransaction[]
   
   @@index([id])
   @@index([categoryId])
@@ -90,6 +94,7 @@ model Modules {
   assignments      Assignments[]
   enrolledModules  EnrolledModule[]
   payments         Payment[]
+  creditTransactions CreditTransaction[]
 
   @@index([courseId])
 }
@@ -142,14 +147,15 @@ model Payment {
   id           String        @id @default(uuid())
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  courseId     String
-  course       Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId     String?
+  course       Course?       @relation(fields: [courseId], references: [id], onDelete: Cascade)
   moduleId     String?
   module       Modules?      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
   enrollmentId String?
   enrollment   Enrollment?   @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
 
   amount       Int           // Amount in Naira
+  credits      Int?          // Amount in Credits (for top ups)
   reference    String        @unique // Paystack transaction reference
   status       PaymentStatus @default(PENDING)
   type         PaymentType
@@ -157,6 +163,28 @@ model Payment {
   paidAt       DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([reference])
+}
+
+model CreditTransaction {
+  id           String                @id @default(uuid())
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount       Int                   // Positive for added credits (+), Negative for deducted credits (-)
+  balanceAfter Int                   // User credit balance after transaction
+  type         CreditTransactionType
+  description  String?
+  reference    String?               // Paystack reference or internal transaction ID
+
+  courseId     String?
+  course       Course?               @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  moduleId     String?
+  module       Modules?              @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+
+  createdAt    DateTime              @default(now())
 
   @@index([userId])
   @@index([courseId])
@@ -209,6 +237,14 @@ enum PaymentStatus {
 }
 
 enum PaymentType {
+  CREDIT_TOP_UP
   FULL_COURSE
   MODULE
+}
+
+enum CreditTransactionType {
+  TOP_UP
+  COURSE_PURCHASE
+  MODULE_PURCHASE
+  REFUND
 }

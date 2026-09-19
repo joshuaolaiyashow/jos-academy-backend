@@ -6,31 +6,36 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PaymentService } from '../payment/payment.service';
-import { InitiateEnrollmentDto } from './dto/initiate-enrollment.dto';
+import { PurchaseCourseDto } from './dto/purchase-course.dto';
 import {
+  CreditTransactionType,
   EnrollmentStatus,
   EnrollmentType,
-  PaymentStatus,
-  PaymentType,
 } from '../generated/prisma/client';
 import { randomBytes } from 'crypto';
+import { NAIRA_PER_CREDIT } from '../credit/credit.service';
 
 @Injectable()
 export class EnrollmentService {
   private readonly logger = new Logger(EnrollmentService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly paymentService: PaymentService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Initiate Course Enrollment (Full Course or Pay-Per-Module)
-   * Calculates pricing and returns Paystack authorization URL
+   * Calculate course and module credit requirements
    */
-  async initiateEnrollment(userId: string, dto: InitiateEnrollmentDto) {
-    console.log("userId", userId)
+  calculateCourseCredits(tuitionFee: number, costCredit?: number | null) {
+    const courseCredits =
+      costCredit && costCredit > 0
+        ? costCredit
+        : Math.ceil(tuitionFee / NAIRA_PER_CREDIT);
+    return courseCredits;
+  }
+
+  /**
+   * Purchase a Course (Full Course or Module-by-Module) using user's Credit Wallet
+   */
+  async purchaseWithCredits(userId: string, dto: PurchaseCourseDto) {
     const { courseId, type, moduleId } = dto;
 
     // 1. Fetch user
@@ -45,14 +50,30 @@ export class EnrollmentService {
     const course = await this.prisma.course.findUnique({
       where: { id: courseId },
       include: {
-        modules: true,
+        modules: {
+          orderBy: { id: 'asc' },
+        },
       },
     });
     if (!course) {
       throw new NotFoundException(`Course with ID "${courseId}" not found`);
     }
 
-    // 3. Check existing enrollment
+    const totalModules = course.modules.length;
+    if (totalModules === 0) {
+      throw new BadRequestException(
+        'This course does not have any modules configured yet.',
+      );
+    }
+
+    // 3. Compute credit costs
+    const courseTotalCredits = this.calculateCourseCredits(
+      course.tuitionFee,
+      course.costCredit,
+    );
+    const moduleCredits = Math.ceil(courseTotalCredits / totalModules);
+
+    // 4. Check existing enrollment
     const existingEnrollment = await this.prisma.enrollment.findUnique({
       where: {
         userId_courseId: { userId, courseId },
@@ -68,25 +89,27 @@ export class EnrollmentService {
       existingEnrollment.type === EnrollmentType.FULL_COURSE
     ) {
       throw new ConflictException(
-        'You already have an active Full Course enrollment for this course.',
+        'You already own full access to this course.',
       );
     }
 
-    let amount: number;
-    let paymentType: PaymentType;
+    let requiredCredits: number;
     let targetModuleId: string | null = null;
+    let txType: CreditTransactionType;
+    let description: string;
+    let targetModuleTitle = '';
 
     if (type === EnrollmentType.FULL_COURSE) {
-      amount = course.tuitionFee;
-      paymentType = PaymentType.FULL_COURSE;
+      requiredCredits = courseTotalCredits;
+      txType = CreditTransactionType.COURSE_PURCHASE;
+      description = `Full course purchase: "${course.name}"`;
     } else if (type === EnrollmentType.MODULAR) {
       if (!moduleId) {
         throw new BadRequestException(
-          'moduleId is required when enrollment type is MODULAR.',
+          'moduleId is required when purchasing a specific module.',
         );
       }
 
-      // Verify module belongs to this course
       const targetModule = course.modules.find((m) => m.id === moduleId);
       if (!targetModule) {
         throw new BadRequestException(
@@ -94,259 +117,160 @@ export class EnrollmentService {
         );
       }
 
-      // Check if user already unlocked this module
+      targetModuleTitle = targetModule.title;
+
+      // Check if module is already unlocked
       if (existingEnrollment) {
         const alreadyUnlocked = existingEnrollment.enrolledModules.some(
           (em) => em.moduleId === moduleId,
         );
         if (alreadyUnlocked) {
           throw new ConflictException(
-            'You have already purchased access to this module.',
+            `You have already purchased module "${targetModule.title}".`,
           );
         }
       }
 
-      const totalModules = course.modules.length;
-      if (totalModules === 0) {
-        throw new BadRequestException(
-          'This course has no modules configured yet.',
-        );
-      }
-
-      // Price per module = Course Tuition divided by total modules count
-      amount = Math.round(course.tuitionFee / totalModules);
-      paymentType = PaymentType.MODULE;
+      requiredCredits = moduleCredits;
       targetModuleId = moduleId;
+      txType = CreditTransactionType.MODULE_PURCHASE;
+      description = `Module purchase: "${targetModule.title}" (${course.name})`;
     } else {
       throw new BadRequestException('Invalid enrollment type');
     }
 
-    // 4. Create or reuse Enrollment record
-    let enrollment = existingEnrollment;
-    if (!enrollment) {
-      enrollment = await this.prisma.enrollment.create({
+    // 5. Verify user has sufficient credit balance
+    if (user.credits < requiredCredits) {
+      const shortBy = requiredCredits - user.credits;
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: `Insufficient credit balance to purchase this ${type === EnrollmentType.FULL_COURSE ? 'course' : 'module'}.`,
+        requiredCredits,
+        availableCredits: user.credits,
+        shortByCredits: shortBy,
+        requiredNaira: requiredCredits * NAIRA_PER_CREDIT,
+        availableNaira: user.credits * NAIRA_PER_CREDIT,
+        shortByNaira: shortBy * NAIRA_PER_CREDIT,
+        action: 'Please top up your wallet credits via POST /credits/buy',
+      });
+    }
+
+    const txReference = `JOS-PUR-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
+
+    // 6. Execute atomic deduction, transaction log, and enrollment activation
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Deduct credits from user wallet
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
         data: {
+          credits: { decrement: requiredCredits },
+        },
+      });
+
+      // Record credit transaction
+      const creditTx = await tx.creditTransaction.create({
+        data: {
+          userId,
+          amount: -requiredCredits,
+          balanceAfter: updatedUser.credits,
+          type: txType,
+          description,
+          reference: txReference,
+          courseId,
+          moduleId: targetModuleId,
+        },
+      });
+
+      // Upsert Enrollment record
+      let enrollment = await tx.enrollment.upsert({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+        create: {
           userId,
           courseId,
           type,
-          status: EnrollmentStatus.PENDING,
+          status: EnrollmentStatus.ACTIVE,
         },
-        include: {
-          enrolledModules: true,
-        },
-      });
-    }
-
-    // 5. Generate unique Paystack reference
-    const reference = `JOS-ENR-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
-
-    // 6. Record Pending Payment in database
-    const payment = await this.prisma.payment.create({
-      data: {
-        userId,
-        courseId,
-        moduleId: targetModuleId,
-        enrollmentId: enrollment.id,
-        amount,
-        reference,
-        status: PaymentStatus.PENDING,
-        type: paymentType,
-      },
-    });
-
-    // 7. Initialize transaction with Paystack
-    const paystackData = await this.paymentService.initializePayment({
-      email: user.email,
-      amount,
-      reference,
-      metadata: {
-        userId,
-        courseId,
-        moduleId: targetModuleId,
-        enrollmentId: enrollment.id,
-        paymentId: payment.id,
-        enrollmentType: type,
-        courseName: course.name,
-      },
-    });
-
-    this.logger.log(
-      `🛒 Enrollment initiated for ${user.email}: Course "${course.name}", Type: ${type}, Amount: ₦${amount}, Ref: ${reference}`,
-    );
-
-    return {
-      message: 'Enrollment initiated successfully. Please complete payment.',
-      authorizationUrl: paystackData.authorization_url,
-      accessCode: paystackData.access_code,
-      reference,
-      amount,
-      courseId: course.id,
-      courseName: course.name,
-      enrollmentType: type,
-      moduleId: targetModuleId,
-    };
-  }
-
-  /**
-   * Verify Paystack payment and activate course/module access
-   * @param reference Paystack transaction reference
-   */
-  async verifyEnrollment(reference: string) {
-    // 1. Fetch payment record
-    const payment = await this.prisma.payment.findUnique({
-      where: { reference },
-      include: {
-        user: true,
-        course: {
-          include: {
-            modules: true,
-          },
-        },
-        enrollment: true,
-      },
-    });
-
-    if (!payment) {
-      throw new NotFoundException(
-        `Payment record with reference "${reference}" not found.`,
-      );
-    }
-
-    if (payment.status === PaymentStatus.SUCCESSFUL) {
-      return {
-        message: 'Payment has already been verified and activated.',
-        status: payment.status,
-        payment,
-      };
-    }
-
-    // 2. Verify with Paystack API
-    const verifyData = await this.paymentService.verifyPayment(reference);
-
-    if (verifyData.status !== 'success') {
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.FAILED },
-      });
-      throw new BadRequestException(
-        `Payment was not successful. Status: ${verifyData.status}`,
-      );
-    }
-
-    // 3. Activate Enrollment and unlock module(s) in a database transaction
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Mark payment as successful
-      const updatedPayment = await tx.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: PaymentStatus.SUCCESSFUL,
-          paidAt: verifyData.paid_at ? new Date(verifyData.paid_at) : new Date(),
+        update: {
+          status: EnrollmentStatus.ACTIVE,
+          ...(type === EnrollmentType.FULL_COURSE
+            ? { type: EnrollmentType.FULL_COURSE }
+            : {}),
         },
       });
 
-      const enrollmentId = payment.enrollmentId!;
-
-      if (payment.type === PaymentType.FULL_COURSE) {
-        // Activate full course enrollment
-        const updatedEnrollment = await tx.enrollment.update({
-          where: { id: enrollmentId },
-          data: {
-            status: EnrollmentStatus.ACTIVE,
-            type: EnrollmentType.FULL_COURSE,
-          },
-        });
-
-        // Bulk unlock all modules in the course
-        for (const mod of payment.course.modules) {
+      // Unlock modules
+      if (type === EnrollmentType.FULL_COURSE) {
+        // Unlock all modules in course
+        for (const mod of course.modules) {
           await tx.enrolledModule.upsert({
             where: {
               enrollmentId_moduleId: {
-                enrollmentId,
+                enrollmentId: enrollment.id,
                 moduleId: mod.id,
               },
             },
             create: {
-              enrollmentId,
+              enrollmentId: enrollment.id,
               moduleId: mod.id,
             },
             update: {},
           });
         }
-
-        return { payment: updatedPayment, enrollment: updatedEnrollment };
-      } else {
-        // Modular enrollment
-        const updatedEnrollment = await tx.enrollment.update({
-          where: { id: enrollmentId },
-          data: {
-            status: EnrollmentStatus.ACTIVE,
+      } else if (targetModuleId) {
+        // Unlock the specific module
+        await tx.enrolledModule.upsert({
+          where: {
+            enrollmentId_moduleId: {
+              enrollmentId: enrollment.id,
+              moduleId: targetModuleId,
+            },
           },
+          create: {
+            enrollmentId: enrollment.id,
+            moduleId: targetModuleId,
+          },
+          update: {},
         });
 
-        // Unlock the specific paid module
-        if (payment.moduleId) {
-          await tx.enrolledModule.upsert({
-            where: {
-              enrollmentId_moduleId: {
-                enrollmentId,
-                moduleId: payment.moduleId,
-              },
-            },
-            create: {
-              enrollmentId,
-              moduleId: payment.moduleId,
-            },
-            update: {},
-          });
-        }
-
-        // Check if student now owns all modules
+        // Check if student now unlocked all modules
         const unlockedCount = await tx.enrolledModule.count({
-          where: { enrollmentId },
+          where: { enrollmentId: enrollment.id },
         });
 
-        if (unlockedCount >= payment.course.modules.length && payment.course.modules.length > 0) {
-          await tx.enrollment.update({
-            where: { id: enrollmentId },
+        if (unlockedCount >= totalModules) {
+          enrollment = await tx.enrollment.update({
+            where: { id: enrollment.id },
             data: { type: EnrollmentType.FULL_COURSE },
           });
         }
-
-        return { payment: updatedPayment, enrollment: updatedEnrollment };
       }
+
+      return {
+        user: updatedUser,
+        creditTx,
+        enrollment,
+      };
     });
 
     this.logger.log(
-      `🎉 Payment confirmed & Enrollment activated: User ${payment.user.email}, Course "${payment.course.name}", Ref: ${reference}`,
+      `🎉 Purchase successful for ${user.email}: Course "${course.name}", Type: ${type}, Credits Deducted: ${requiredCredits}, New Balance: ${result.user.credits}`,
     );
 
     return {
-      message: 'Payment verified successfully! Course access activated.',
-      reference,
-      amount: payment.amount,
-      status: PaymentStatus.SUCCESSFUL,
-      enrollment: result.enrollment,
+      message: `${type === EnrollmentType.FULL_COURSE ? 'Course' : `Module "${targetModuleTitle}"`} purchased successfully with credits!`,
+      courseId: course.id,
+      courseName: course.name,
+      purchaseType: type,
+      moduleId: targetModuleId,
+      creditsDeducted: requiredCredits,
+      remainingBalance: result.user.credits,
+      remainingNairaEquivalent: result.user.credits * NAIRA_PER_CREDIT,
+      reference: txReference,
+      enrollmentId: result.enrollment.id,
     };
-  }
-
-  /**
-   * Handle Paystack Webhook events (charge.success)
-   */
-  async handleWebhook(event: any) {
-    if (event?.event === 'charge.success') {
-      const reference = event.data?.reference;
-      if (reference) {
-        try {
-          await this.verifyEnrollment(reference);
-        } catch (err: any) {
-          this.logger.error(
-            `Webhook verification error for ${reference}:`,
-            err.message,
-          );
-        }
-      }
-    }
-    return { received: true };
   }
 
   /**

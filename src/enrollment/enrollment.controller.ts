@@ -1,11 +1,7 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
-  Headers,
-  HttpCode,
-  HttpStatus,
   Post,
   Query,
   Req,
@@ -13,86 +9,61 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiHeader,
   ApiOperation,
   ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { EnrollmentService } from './enrollment.service';
-import { PaymentService } from '../payment/payment.service';
-import { InitiateEnrollmentDto } from './dto/initiate-enrollment.dto';
+import { PurchaseCourseDto } from './dto/purchase-course.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-@ApiTags('Enrollment & Payments')
+@ApiTags('Enrollment & Purchases')
 @Controller('enrollments')
 export class EnrollmentController {
-  constructor(
-    private readonly enrollmentService: EnrollmentService,
-    private readonly paymentService: PaymentService,
-  ) {}
+  constructor(private readonly enrollmentService: EnrollmentService) {}
 
-  @Post('initiate')
+  @Post('purchase')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary:
-      'Initiate course enrollment (Full Course or Module-by-Module) and get Paystack payment URL',
+      'Purchase Course or Specific Module using Credits (Wallet Balance)',
+    description:
+      'Deducts the required credits from the student’s wallet balance and instantly unlocks the full course or chosen module.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Enrollment initiated. Redirect user to authorizationUrl.',
+    description: 'Course or module unlocked successfully.',
     schema: {
       example: {
-        message: 'Enrollment initiated successfully. Please complete payment.',
-        authorizationUrl: 'https://checkout.paystack.com/xxxxxx',
-        accessCode: 'xxxxxx',
-        reference: 'JOS-ENR-1725700000000-A1B2C3D4',
-        amount: 50000,
+        message: 'Module "Frontend Basics" purchased successfully with credits!',
         courseId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         courseName: 'Full-Stack Web Development Bootcamp',
-        enrollmentType: 'FULL_COURSE',
-        moduleId: null,
+        purchaseType: 'MODULAR',
+        moduleId: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
+        creditsDeducted: 1000,
+        remainingBalance: 4000,
+        remainingNairaEquivalent: 40000,
+        reference: 'JOS-PUR-1725700000000-A1B2C3',
+        enrollmentId: 'c3d4e5f6-a7b8-9012-cdef-123456789012',
       },
     },
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad Request - Missing moduleId or invalid data.',
+    description:
+      'Bad Request - Insufficient credits or missing required fields.',
   })
   @ApiResponse({
     status: 409,
-    description: 'Conflict - User already purchased full course or module.',
+    description: 'Conflict - Already owns full course or this specific module.',
   })
-  async initiateEnrollment(
+  async purchaseCourse(
     @Req() req: any,
-    @Body() initiateDto: InitiateEnrollmentDto,
+    @Body() purchaseDto: PurchaseCourseDto,
   ) {
-    return this.enrollmentService.initiateEnrollment(req.user.id, initiateDto);
-  }
-
-  @Post('webhook')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Paystack webhook listener (automatically activates enrollment upon payment)',
-  })
-  @ApiHeader({
-    name: 'x-paystack-signature',
-    description: 'HMAC SHA512 signature from Paystack',
-    required: true,
-  })
-  @ApiResponse({ status: 200, description: 'Webhook received and processed.' })
-  @ApiResponse({ status: 400, description: 'Invalid webhook signature.' })
-  async handleWebhook(
-    @Headers('x-paystack-signature') signature: string,
-    @Body() body: any,
-  ) {
-    const isValid = this.paymentService.verifyWebhookSignature(signature, body);
-    if (!isValid) {
-      throw new BadRequestException('Invalid Paystack webhook signature');
-    }
-    return this.enrollmentService.handleWebhook(body);
+    return this.enrollmentService.purchaseWithCredits(req.user.id, purchaseDto);
   }
 
   @Get('my-courses')

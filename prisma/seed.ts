@@ -60,7 +60,7 @@ async function main() {
   });
 
   if (studentUser) {
-    console.log(`ℹ️ Student test user already exists: ${studentEmail}`);
+    console.log(`ℹ️ Student test user already exists: ${studentEmail} (Credits: ${studentUser.credits})`);
   } else {
     const hashedStudentPassword = await bcrypt.hash(studentPassword, 10);
     studentUser = await prisma.user.create({
@@ -71,11 +71,13 @@ async function main() {
         role: UserRole.USER,
         isEmailVerified: true,
         referralCode: 'JOS-STUDENT',
+        credits: 2000, // Pre-funded with 2,000 credits (₦20,000) for instant testing
       },
     });
     console.log('🎉 Student test account created successfully:');
     console.log(`   Email:    ${studentEmail}`);
     console.log(`   Password: ${studentPassword}`);
+    console.log(`   Credits:  2,000 (₦20,000)`);
   }
 
   // 3. Seed Category

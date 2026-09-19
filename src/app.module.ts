@@ -10,6 +10,7 @@ import { FileUploadModule } from './file-upload/file-upload.module';
 import { CategoryModule } from './category/category.module';
 import { PaymentModule } from './payment/payment.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
+import { CreditModule } from './credit/credit.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { EnrollmentModule } from './enrollment/enrollment.module';
     CategoryModule,
     PaymentModule,
     EnrollmentModule,
+    CreditModule,
   ],
   controllers: [AppController],
   providers: [AppService],
