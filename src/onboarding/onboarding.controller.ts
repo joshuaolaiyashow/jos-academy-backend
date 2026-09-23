@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Post,
   Query,
@@ -33,12 +34,12 @@ export class OnboardingController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Save or complete student onboarding progress',
-    description: `Saves the student onboarding credentials across any or all of the 5 onboarding steps:
+    description: `Saves the student onboarding credentials across any or all of the onboarding steps:
 1. **Interests**: Learning interests (Robotics, AI/ML and Automation, Software Engineering, Aerospace Engineering, Cybersecurity, Other)
 2. **Education**: Education level (Junior Secondary School, Senior Secondary School, Polytechnic, University, Graduate, Working Professional, Other)
-3. **Experience**: Practical experience & portfolio/work URL
-4. **Academic Background Selection**: Option to upload results (WAEC, NECO, transcripts) OR take JOS Learning Assessment
-5. **Assessment & Completion**: Assessment answers/score, marking onboarding as completed.`,
+3. **Experience**: Practical experience & portfolio/work URL or attachment
+4. **Academic Background**: Upload results (WAEC, NECO, NABTEB, BECE, transcripts) OR take frontend learning assessment
+5. **Completion**: Assessment answers/score, saving full profile and marking onboarding as completed.`,
   })
   @ApiResponse({
     status: 201,
@@ -62,9 +63,19 @@ export class OnboardingController {
           practicalExperience: 'COMPLETED_PERSONAL_PROJECTS',
           workPortfolioUrl: 'https://github.com/student/robotics-demo',
           workAttachmentUrl: null,
-          academicBackgroundType: 'JOS_LEARNING_ASSESSMENT',
-          academicResultsUrl: null,
-          academicResultsType: null,
+          academicBackgroundType: 'UPLOAD_ACADEMIC_RESULTS',
+          academicDocuments: [
+            {
+              documentType: 'WAEC',
+              fileUrl:
+                'https://jos-academy.s3.us-east-1.amazonaws.com/student-academic-results/waec.pdf',
+              fileName: 'waec.pdf',
+              fileSize: 245800,
+            },
+          ],
+          academicResultsUrl:
+            'https://jos-academy.s3.us-east-1.amazonaws.com/student-academic-results/waec.pdf',
+          academicResultsType: 'WAEC',
           assessmentScore: 14,
           assessmentTotal: 16,
           assessmentCompleted: true,
@@ -98,7 +109,7 @@ export class OnboardingController {
   @ApiOperation({
     summary: 'Get current student onboarding progress and saved details',
     description:
-      'Retrieves the student’s current onboarding step, completion status, and all saved answers.',
+      'Retrieves the student’s current onboarding step, completion status, uploaded academic documents, and all saved answers.',
   })
   @ApiResponse({
     status: 200,
@@ -114,9 +125,16 @@ export class OnboardingController {
           interests: ['Robotics', 'Software Engineering'],
           educationLevel: 'UNIVERSITY',
           practicalExperience: 'COMPLETED_PERSONAL_PROJECTS',
-          academicBackgroundType: 'JOS_LEARNING_ASSESSMENT',
-          assessmentScore: 14,
-          assessmentTotal: 16,
+          academicBackgroundType: 'UPLOAD_ACADEMIC_RESULTS',
+          academicDocuments: [
+            {
+              documentType: 'WAEC',
+              fileUrl:
+                'https://jos-academy.s3.us-east-1.amazonaws.com/student-academic-results/waec.pdf',
+              fileName: 'waec.pdf',
+              fileSize: 245800,
+            },
+          ],
           isCompleted: true,
         },
       },
@@ -132,16 +150,17 @@ export class OnboardingController {
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: 'Upload Academic Results or Portfolio Work file to AWS S3',
-    description:
-      'Uploads a file (PDF, image, document) to AWS S3 and links it directly to the student’s onboarding profile.',
+    summary:
+      'Upload Academic Result document (WAEC, NECO, NABTEB, BECE, Transcripts, Other) to S3',
+    description: `Uploads a document (PDF, PNG, JPG) to AWS S3 and automatically saves it with the chosen document type (e.g. WAEC, NECO, NABTEB, BECE, TRANSCRIPT, OTHER, PORTFOLIO) into the student's profile.
+Students can call this multiple times to add multiple documents.`,
   })
   @ApiQuery({
-    name: 'type',
-    enum: ['academic_results', 'portfolio_work'],
-    required: true,
+    name: 'documentType',
+    required: false,
+    example: 'WAEC',
     description:
-      'Type of document being uploaded: "academic_results" (WAEC/NECO/transcripts) or "portfolio_work" (project work upload)',
+      'Document type selected from dropdown: "WAEC", "NECO", "NABTEB", "BECE", "TRANSCRIPT", "OTHER", or "PORTFOLIO"',
   })
   @ApiBody({
     schema: {
@@ -150,7 +169,13 @@ export class OnboardingController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'Document or image file to upload',
+          description: 'Document or certificate file to upload (PDF, PNG, JPG)',
+        },
+        documentType: {
+          type: 'string',
+          example: 'WAEC',
+          description:
+            'Optional: Document type (e.g. WAEC, NECO, NABTEB, BECE, TRANSCRIPT, OTHER)',
         },
       },
       required: ['file'],
@@ -158,12 +183,12 @@ export class OnboardingController {
   })
   @ApiResponse({
     status: 201,
-    description: 'File uploaded successfully and saved to student profile.',
+    description: 'Document uploaded to S3 and saved to student profile.',
     schema: {
       example: {
-        message: 'Document uploaded successfully',
+        message: 'WAEC document uploaded and saved successfully.',
         url: 'https://jos-academy.s3.us-east-1.amazonaws.com/student-academic-results/1727100000000-uuid-waec.pdf',
-        documentType: 'academic_results',
+        documentType: 'WAEC',
         fileName: 'waec.pdf',
         fileSize: 245800,
       },
@@ -173,42 +198,40 @@ export class OnboardingController {
   async uploadDocument(
     @Req() req: any,
     @UploadedFile() file: Express.Multer.File,
-    @Query('type') type: 'academic_results' | 'portfolio_work' = 'academic_results',
+    @Query('documentType') queryDocType?: string,
+    @Body('documentType') bodyDocType?: string,
   ) {
-    return this.onboardingService.uploadDocument(req.user.id, file, type);
+    const documentType = bodyDocType || queryDocType || 'WAEC';
+    return this.onboardingService.uploadDocument(
+      req.user.id,
+      file,
+      documentType,
+    );
   }
 
-  @Get('assessment-questions')
+  @Delete('academic-document')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: 'Get 16 JOS Learning Assessment questions',
+    summary: 'Remove an uploaded academic document from onboarding profile',
     description:
-      'Fetches the 16 beginner-friendly assessment questions with multiple choice options for students taking the assessment path.',
+      'Removes a specific document from the student’s list of uploaded academic results.',
+  })
+  @ApiQuery({
+    name: 'fileUrl',
+    required: true,
+    description: 'The S3 fileUrl of the document to remove',
+    example:
+      'https://jos-academy.s3.us-east-1.amazonaws.com/student-academic-results/waec.pdf',
   })
   @ApiResponse({
     status: 200,
-    description: 'List of 16 learning assessment questions.',
-    schema: {
-      example: {
-        title: 'JOS Learning Assessment',
-        description:
-          'Untimed and beginner friendly - there’s no pass or fail, this just helps us understand your starting point.',
-        totalQuestions: 16,
-        questions: [
-          {
-            id: 1,
-            question: 'What is 12 + 27?',
-            options: [39, 35, 41, 29],
-          },
-          {
-            id: 2,
-            question: 'What is 15 × 6?',
-            options: [80, 90, 95, 100],
-          },
-        ],
-      },
-    },
+    description: 'Document removed successfully.',
   })
-  getAssessmentQuestions() {
-    return this.onboardingService.getAssessmentQuestions();
+  async deleteAcademicDocument(
+    @Req() req: any,
+    @Query('fileUrl') fileUrl: string,
+  ) {
+    return this.onboardingService.deleteAcademicDocument(req.user.id, fileUrl);
   }
 }

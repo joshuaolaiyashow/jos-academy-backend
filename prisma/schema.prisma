@@ -273,6 +273,7 @@ model StudentOnboarding {
   academicBackgroundType AcademicBackgroundType?  // UPLOAD_ACADEMIC_RESULTS or JOS_LEARNING_ASSESSMENT
   academicResultsUrl     String?                  // S3 URL for WAEC, NECO, NABTEB, transcripts
   academicResultsType    String?                  // 'WAEC' | 'NECO' | 'NABTEB' | 'BECE' | 'TRANSCRIPT' | 'OTHER'
+  academicDocuments      Json?                    // Array of uploaded documents: [{ documentType: 'WAEC', fileUrl: '...', fileName: '...', fileSize: 12345 }]
 
   // JOS Learning Assessment
   assessmentScore        Int?                     // e.g. 14

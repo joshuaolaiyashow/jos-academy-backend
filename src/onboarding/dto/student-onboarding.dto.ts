@@ -7,9 +7,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
-  Max,
-  Min,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -19,28 +17,65 @@ import {
   PracticalExperience,
 } from '../../generated/prisma/client';
 
-export class AssessmentAnswerItemDto {
-  @ApiProperty({ example: 1, description: 'Question number (1 to 16)' })
-  @IsInt()
-  questionId: number;
-
+export class AcademicDocumentItemDto {
   @ApiProperty({
-    example: 'What is 12 + 27?',
-    description: 'The assessment question text',
+    example: 'WAEC',
+    description:
+      'Document / certificate type (e.g. WAEC, NECO, NABTEB, BECE, TRANSCRIPT, OTHER)',
   })
   @IsString()
-  question: string;
+  @IsNotEmpty()
+  documentType: string;
 
   @ApiProperty({
+    example:
+      'https://jos-academy.s3.us-east-1.amazonaws.com/student-academic-results/1727100000000-uuid-waec.pdf',
+    description: 'S3 URL of the uploaded document',
+  })
+  @IsString()
+  @IsNotEmpty()
+  fileUrl: string;
+
+  @ApiPropertyOptional({
+    example: 'waec_result_2025.pdf',
+    description: 'Original file name',
+  })
+  @IsOptional()
+  @IsString()
+  fileName?: string;
+
+  @ApiPropertyOptional({
+    example: 245800,
+    description: 'File size in bytes',
+  })
+  @IsOptional()
+  @IsInt()
+  fileSize?: number;
+}
+
+export class AssessmentAnswerItemDto {
+  @ApiPropertyOptional({ example: 1, description: 'Question ID or index' })
+  @IsOptional()
+  questionId?: number | string;
+
+  @ApiPropertyOptional({
+    example: 'What is 12 + 27?',
+    description: 'Question text',
+  })
+  @IsOptional()
+  @IsString()
+  question?: string;
+
+  @ApiPropertyOptional({
     example: '39',
     description: 'Option selected by the student',
   })
-  @IsNotEmpty()
-  selectedOption: string;
+  @IsOptional()
+  selectedOption?: any;
 
   @ApiPropertyOptional({
     example: true,
-    description: 'Whether the answer is correct (optional/computed)',
+    description: 'Whether the answer is correct (managed by frontend)',
   })
   @IsOptional()
   @IsBoolean()
@@ -54,7 +89,7 @@ export class SaveStudentOnboardingDto {
   @ApiPropertyOptional({
     example: ['Software Engineering', 'AI/ML and Automation', 'Robotics'],
     description:
-      'Array of learning interests. Options: Robotics, AI/ML and Automation, Software Engineering, Aerospace Engineering, Cybersecurity, Other',
+      'Array of learning interests: Robotics, AI/ML and Automation, Software Engineering, Aerospace Engineering, Cybersecurity, Other',
     type: [String],
   })
   @IsOptional()
@@ -102,7 +137,7 @@ export class SaveStudentOnboardingDto {
     enum: PracticalExperience,
     example: PracticalExperience.COMPLETED_PERSONAL_PROJECTS,
     description:
-      'Practical building experience: NEVER_BUILT_ANYTHING, COMPLETED_PERSONAL_PROJECTS, PARTICIPATED_IN_COMPETITIONS, WORKED_PROFESSIONALLY, UPLOAD_WORK',
+      'Practical experience: NEVER_BUILT_ANYTHING, COMPLETED_PERSONAL_PROJECTS, PARTICIPATED_IN_COMPETITIONS, WORKED_PROFESSIONALLY, UPLOAD_WORK',
   })
   @IsOptional()
   @IsEnum(PracticalExperience, {
@@ -114,16 +149,17 @@ export class SaveStudentOnboardingDto {
   @ApiPropertyOptional({
     example: 'https://github.com/johndoe/my-robotics-project',
     description:
-      'Link to portfolio, GitHub repository, or live project (optional in Step 3)',
+      'Link to portfolio, GitHub repository, or live project (Step 3)',
   })
   @IsOptional()
   @IsString()
   workPortfolioUrl?: string;
 
   @ApiPropertyOptional({
-    example: 'https://jos-academy.s3.us-east-1.amazonaws.com/portfolio/sample.pdf',
+    example:
+      'https://jos-academy.s3.us-east-1.amazonaws.com/student-portfolios/sample-project.pdf',
     description:
-      'S3 URL of uploaded project work or document if "UPLOAD_WORK" was selected',
+      'S3 URL of uploaded project work if "UPLOAD_WORK" was selected',
   })
   @IsOptional()
   @IsString()
@@ -134,9 +170,9 @@ export class SaveStudentOnboardingDto {
   // ==========================================
   @ApiPropertyOptional({
     enum: AcademicBackgroundType,
-    example: AcademicBackgroundType.JOS_LEARNING_ASSESSMENT,
+    example: AcademicBackgroundType.UPLOAD_ACADEMIC_RESULTS,
     description:
-      'Academic background method: UPLOAD_ACADEMIC_RESULTS (WAEC, NECO, transcripts) or JOS_LEARNING_ASSESSMENT (take short 16-question assessment)',
+      'Academic background method: UPLOAD_ACADEMIC_RESULTS (upload records) or JOS_LEARNING_ASSESSMENT (take frontend assessment)',
   })
   @IsOptional()
   @IsEnum(AcademicBackgroundType, {
@@ -146,10 +182,20 @@ export class SaveStudentOnboardingDto {
   academicBackgroundType?: AcademicBackgroundType;
 
   @ApiPropertyOptional({
-    example:
-      'https://jos-academy.s3.us-east-1.amazonaws.com/academic-records/waec-result.pdf',
+    type: [AcademicDocumentItemDto],
     description:
-      'S3 URL of uploaded WAEC, NECO, NABTEB, BECE, or transcript certificate',
+      'List of uploaded academic documents (e.g. WAEC, NECO, NABTEB, BECE, transcripts). Can upload multiple documents.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AcademicDocumentItemDto)
+  academicDocuments?: AcademicDocumentItemDto[];
+
+  @ApiPropertyOptional({
+    example:
+      'https://jos-academy.s3.us-east-1.amazonaws.com/student-academic-results/waec-result.pdf',
+    description: 'Primary academic result S3 URL (if single file provided)',
   })
   @IsOptional()
   @IsString()
@@ -157,8 +203,7 @@ export class SaveStudentOnboardingDto {
 
   @ApiPropertyOptional({
     example: 'WAEC',
-    description:
-      'Type of academic certificate uploaded (e.g. WAEC, NECO, NABTEB, BECE, TRANSCRIPT, OTHER)',
+    description: 'Primary academic result certificate type (e.g. WAEC, NECO)',
   })
   @IsOptional()
   @IsString()
@@ -166,18 +211,17 @@ export class SaveStudentOnboardingDto {
 
   @ApiPropertyOptional({
     example: 14,
-    description: 'Score obtained on the JOS Learning Assessment (e.g. 14 out of 16)',
+    description:
+      'Assessment score achieved on the frontend quiz (e.g. 14 out of 16)',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
-  @Max(16)
   assessmentScore?: number;
 
   @ApiPropertyOptional({
     example: 16,
-    description: 'Total number of assessment questions (default: 16)',
+    description: 'Total number of assessment questions configured on frontend',
   })
   @IsOptional()
   @Type(() => Number)
@@ -186,15 +230,16 @@ export class SaveStudentOnboardingDto {
 
   @ApiPropertyOptional({
     type: [AssessmentAnswerItemDto],
-    description: 'Answers submitted for the JOS Learning Assessment questions',
+    description:
+      'Array of answers/questions submitted from the frontend assessment',
   })
   @IsOptional()
   @IsArray()
-  assessmentAnswers?: AssessmentAnswerItemDto[];
+  assessmentAnswers?: any[];
 
   @ApiPropertyOptional({
     example: true,
-    description: 'Whether the assessment has been completed',
+    description: 'Whether the assessment has been completed on frontend',
   })
   @IsOptional()
   @IsBoolean()
@@ -216,9 +261,20 @@ export class SaveStudentOnboardingDto {
   @ApiPropertyOptional({
     example: true,
     description:
-      'Set to true when student completes the full onboarding flow',
+      'Set to true when student completes the onboarding flow',
   })
   @IsOptional()
   @IsBoolean()
   isCompleted?: boolean;
+}
+
+export class UploadAcademicDocumentDto {
+  @ApiProperty({
+    example: 'WAEC',
+    description:
+      'Document type selected by user: "WAEC", "NECO", "NABTEB", "BECE", "TRANSCRIPT", "OTHER", or "PORTFOLIO"',
+  })
+  @IsString()
+  @IsNotEmpty()
+  documentType: string;
 }
