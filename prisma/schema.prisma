@@ -27,6 +27,8 @@ model User {
   teachingExperience String?
   availability       AvailabilityType?
   credits            Int               @default(0)
+  isOnboarded        Boolean           @default(false)
+  studentOnboarding  StudentOnboarding?
   verifications      Verification[]
   enrollments        Enrollment[]
   payments           Payment[]
@@ -247,4 +249,75 @@ enum CreditTransactionType {
   COURSE_PURCHASE
   MODULE_PURCHASE
   REFUND
+}
+
+model StudentOnboarding {
+  id                     String                   @id @default(uuid())
+  userId                 String                   @unique
+  user                   User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Step 1: Interests
+  interests              String[]                 @default([])
+  otherInterest          String?
+
+  // Step 2: Educational Level
+  educationLevel         EducationLevel?
+  otherEducationLevel    String?
+
+  // Step 3: Practical Experience
+  practicalExperience    PracticalExperience?
+  workPortfolioUrl       String?                  // Optional URL to portfolio, github, or project link
+  workAttachmentUrl      String?                  // S3 URL if uploaded project work file
+
+  // Step 4 & 5: Academic Background
+  academicBackgroundType AcademicBackgroundType?  // UPLOAD_ACADEMIC_RESULTS or JOS_LEARNING_ASSESSMENT
+  academicResultsUrl     String?                  // S3 URL for WAEC, NECO, NABTEB, transcripts
+  academicResultsType    String?                  // 'WAEC' | 'NECO' | 'NABTEB' | 'BECE' | 'TRANSCRIPT' | 'OTHER'
+
+  // JOS Learning Assessment
+  assessmentScore        Int?                     // e.g. 14
+  assessmentTotal        Int?                     @default(16) // 16 questions
+  assessmentAnswers      Json?                    // Array of answers/questions
+  assessmentCompleted    Boolean                  @default(false)
+
+  // Status & Progress
+  currentStep            OnboardingStep           @default(INTERESTS)
+  isCompleted            Boolean                  @default(false)
+  completedAt            DateTime?
+
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+
+  @@index([userId])
+}
+
+enum EducationLevel {
+  JUNIOR_SECONDARY_SCHOOL
+  SENIOR_SECONDARY_SCHOOL
+  POLYTECHNIC
+  UNIVERSITY
+  GRADUATE
+  WORKING_PROFESSIONAL
+  OTHER
+}
+
+enum PracticalExperience {
+  NEVER_BUILT_ANYTHING
+  COMPLETED_PERSONAL_PROJECTS
+  PARTICIPATED_IN_COMPETITIONS
+  WORKED_PROFESSIONALLY
+  UPLOAD_WORK
+}
+
+enum AcademicBackgroundType {
+  UPLOAD_ACADEMIC_RESULTS
+  JOS_LEARNING_ASSESSMENT
+}
+
+enum OnboardingStep {
+  INTERESTS
+  EDUCATION
+  EXPERIENCE
+  BACKGROUND
+  DONE
 }

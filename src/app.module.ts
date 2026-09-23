@@ -11,6 +11,7 @@ import { CategoryModule } from './category/category.module';
 import { PaymentModule } from './payment/payment.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { CreditModule } from './credit/credit.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CreditModule } from './credit/credit.module';
     PaymentModule,
     EnrollmentModule,
     CreditModule,
+    OnboardingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
