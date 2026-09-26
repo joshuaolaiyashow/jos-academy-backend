@@ -1,5 +1,12 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_TARGETS } from '../audit/audit-actions';
 import { NotificationService } from '../notification/notification.service';
 import { CreateCreatorDto } from './dto/create-creator.dto';
 import { generateRandomPassword, generateReferralCode } from '../utils';
@@ -13,6 +20,7 @@ export class CreatorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationService: NotificationService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -20,14 +28,25 @@ export class CreatorService {
    * Generates a random password and sends credentials via email.
    */
   async createCreator(dto: CreateCreatorDto) {
-    const { email, name, phone, country, fieldOfExpertise, teachingExperience, availability } = dto;
+    const {
+      email,
+      name,
+      phone,
+      country,
+      fieldOfExpertise,
+      teachingExperience,
+      availability,
+      wasApplicant,
+    } = dto;
 
     // 1. Check if email already exists
     const existingUser = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase() },
     });
     if (existingUser) {
-      throw new ConflictException('A user or creator with this email address already exists');
+      throw new ConflictException(
+        'A user or creator with this email address already exists',
+      );
     }
 
     // 2. Generate temporary password and hash it
@@ -46,6 +65,7 @@ export class CreatorService {
         referralCode,
         role: UserRole.INSTRUCTOR,
         isEmailVerified: true,
+        mustChangePassword: true,
         phone,
         country,
         fieldOfExpertise,
@@ -68,13 +88,28 @@ export class CreatorService {
       },
     });
 
-    // 5. Email login credentials to the creator
-    await this.notificationService.sendCreatorCredentialsEmail(creator.email, creator.name, tempPassword);
+    await this.audit.record({
+      action: AUDIT_ACTIONS.CREATOR_CREATED,
+      targetType: AUDIT_TARGETS.USER,
+      targetId: creator.id,
+      metadata: { wasApplicant },
+    });
 
-    this.logger.log(`🎨 Creator account onboarded successfully by Admin: ${creator.email}`);
+    // 5. Email login credentials to the creator
+    await this.notificationService.sendCreatorCredentialsEmail(
+      creator.email,
+      creator.name,
+      tempPassword,
+      wasApplicant,
+    );
+
+    this.logger.log(
+      `🎨 Creator account onboarded successfully by Admin: ${creator.email}`,
+    );
 
     return {
-      message: 'Creator onboarded successfully. Credentials have been sent to their email.',
+      message:
+        'Creator onboarded successfully. Credentials have been sent to their email.',
       creator,
     };
   }
@@ -99,6 +134,7 @@ export class CreatorService {
         availability: true,
         referralCode: true,
         isEmailVerified: true,
+        isSuspended: true,
         createdAt: true,
       },
       orderBy: {
@@ -106,9 +142,36 @@ export class CreatorService {
       },
     });
 
+    const creatorsWithRatings = await Promise.all(
+      creators.map(async (creator) => ({
+        ...creator,
+        ...(await this.getCreatorRating(creator.id)),
+      })),
+    );
+
     return {
       total: creators.length,
-      creators,
+      creators: creatorsWithRatings,
+    };
+  }
+
+  /**
+   * A creator's overall rating is the average across every review left on
+   * any of their courses (see ReviewModule) — courses are the reviewable
+   * unit, so this is a computed aggregate rather than a stored field.
+   */
+  private async getCreatorRating(
+    creatorId: string,
+  ): Promise<{ rating: number; reviewsCount: number }> {
+    const aggregate = await this.prisma.review.aggregate({
+      where: { course: { creatorId } },
+      _avg: { rating: true },
+      _count: true,
+    });
+
+    return {
+      rating: aggregate._avg.rating ?? 0,
+      reviewsCount: aggregate._count,
     };
   }
 
@@ -133,14 +196,15 @@ export class CreatorService {
         availability: true,
         referralCode: true,
         isEmailVerified: true,
+        isSuspended: true,
         createdAt: true,
       },
-    }); 
+    });
 
     if (!creator) {
       throw new NotFoundException(`Creator with ID "${id}" not found`);
     }
 
-    return creator;
+    return { ...creator, ...(await this.getCreatorRating(creator.id)) };
   }
 }

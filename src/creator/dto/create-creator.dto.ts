@@ -1,5 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { AvailabilityType } from '../../generated/prisma/client';
 
 export class CreateCreatorDto {
@@ -56,6 +63,17 @@ export class CreateCreatorDto {
     example: AvailabilityType.PART_TIME,
     description: 'Availability (FULL_TIME or PART_TIME)',
   })
-  @IsEnum(AvailabilityType, { message: 'Availability must be FULL_TIME or PART_TIME' })
+  @IsEnum(AvailabilityType, {
+    message: 'Availability must be FULL_TIME or PART_TIME',
+  })
   availability: AvailabilityType;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'True when this account is being created from an accepted job application — switches the credentials email to a congratulatory "application accepted" message',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'wasApplicant must be a boolean' })
+  wasApplicant?: boolean;
 }

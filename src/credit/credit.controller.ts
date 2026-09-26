@@ -7,6 +7,10 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Logger,
+  Param,
+  Query,
+  Redirect,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -21,10 +25,13 @@ import { CreditService } from './credit.service';
 import { PaymentService } from '../payment/payment.service';
 import { BuyCreditsDto } from './dto/buy-credits.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { paymentResultUrl } from './credit-callback';
 
 @ApiTags('Credit Wallet & Purchases')
 @Controller('credits')
 export class CreditController {
+  private readonly logger = new Logger(CreditController.name);
+
   constructor(
     private readonly creditService: CreditService,
     private readonly paymentService: PaymentService,
@@ -85,6 +92,58 @@ export class CreditController {
     return this.creditService.handleWebhook(body);
   }
 
+  /**
+   * PAYSTACK_CALLBACK_URL points here. Paystack sends the buyer's browser (not its
+   * servers), so it works on localhost with no tunnel. Public on purpose: it only credits
+   * the account that created the payment, and only after Paystack confirms it.
+   */
+  @Get('paystack/callback')
+  @Redirect()
+  @ApiOperation({
+    summary:
+      'Paystack redirect after checkout: verifies the payment, credits the wallet once, then redirects to the credits page',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirects to the frontend credits page.',
+  })
+  async paystackCallback(
+    @Query('reference') reference?: string,
+    @Query('trxref') trxref?: string,
+  ) {
+    const paymentReference = reference ?? trxref;
+    if (!paymentReference) return { url: paymentResultUrl('failed') };
+    try {
+      await this.creditService.verifyCreditPayment(paymentReference);
+      return { url: paymentResultUrl('success') };
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Paystack callback could not credit ${paymentReference}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { url: paymentResultUrl('failed') };
+    }
+  }
+
+  @Get('verify/:reference')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Check a top-up with Paystack and credit the wallet if it succeeded (safe to repeat)',
+  })
+  @ApiResponse({ status: 200, description: 'Credited, or already processed.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Paystack reports the payment did not succeed.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'No top-up with this reference for this user.',
+  })
+  verifyPayment(@Req() req: any, @Param('reference') reference: string) {
+    return this.creditService.verifyOwnCreditPayment(req.user, reference);
+  }
+
   @Get('balance')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
@@ -114,7 +173,8 @@ export class CreditController {
   })
   @ApiResponse({
     status: 200,
-    description: 'List of credit transactions (top-ups, course purchases, module purchases).',
+    description:
+      'List of credit transactions (top-ups, course purchases, module purchases).',
   })
   async getTransactions(@Req() req: any) {
     return this.creditService.getTransactions(req.user.id);

@@ -14,7 +14,8 @@ export class InitiateEnrollmentDto {
   @ApiProperty({
     enum: EnrollmentType,
     example: EnrollmentType.FULL_COURSE,
-    description: 'Enrollment type: FULL_COURSE (pay full tuition) or MODULAR (pay per module)',
+    description:
+      'Enrollment type: FULL_COURSE (pay full tuition) or MODULAR (pay per module)',
   })
   @IsEnum(EnrollmentType, {
     message: 'type must be either FULL_COURSE or MODULAR',
@@ -23,7 +24,8 @@ export class InitiateEnrollmentDto {
 
   @ApiPropertyOptional({
     example: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
-    description: 'Required if type is MODULAR: The specific Module ID to unlock and pay for',
+    description:
+      'Required if type is MODULAR: The specific Module ID to unlock and pay for',
   })
   @IsOptional()
   @IsString({ message: 'moduleId must be a string' })

@@ -84,7 +84,8 @@ export class CreateCourseDto {
   heroImage?: any;
 
   @ApiPropertyOptional({
-    example: 'https://jos-academy.s3.us-east-1.amazonaws.com/courses/example.png',
+    example:
+      'https://jos-academy.s3.us-east-1.amazonaws.com/courses/example.png',
     description: 'Hero image filename or URL (optional if uploading file)',
   })
   @IsOptional()
@@ -121,7 +122,9 @@ export class CreateCourseDto {
     example: TargetLevel.Foundation,
     description: 'Target skill level (Foundation, Intermediate, or Advanced)',
   })
-  @IsEnum(TargetLevel, { message: 'targetLevel must be Foundation, Intermediate, or Advanced' })
+  @IsEnum(TargetLevel, {
+    message: 'targetLevel must be Foundation, Intermediate, or Advanced',
+  })
   targetLevel: TargetLevel;
 
   @ApiProperty({
@@ -147,7 +150,13 @@ export class CreateCourseDto {
     description: 'Whether a certificate is offered upon completion',
   })
   @IsOptional()
-  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : value,
+  )
   @IsBoolean()
   certificationOffered?: boolean;
 
@@ -156,7 +165,13 @@ export class CreateCourseDto {
     description: 'Whether a capstone project is required',
   })
   @IsOptional()
-  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : value,
+  )
   @IsBoolean()
   capstoneRequired?: boolean;
 
@@ -165,7 +180,13 @@ export class CreateCourseDto {
     description: 'Whether career support is included',
   })
   @IsOptional()
-  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : value,
+  )
   @IsBoolean()
   careerSupportIncluded?: boolean;
 

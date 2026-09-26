@@ -21,7 +21,10 @@ export function generateOtp(length: number = 6): string {
  * @param prefix Optional prefix to prepend to the code (e.g. "JOS")
  * @returns Referral code string, e.g. "JOS-X8F9K2M1" or "X8F9K2M1"
  */
-export function generateReferralCode(length: number = 8, prefix: string = ''): string {
+export function generateReferralCode(
+  length: number = 8,
+  prefix: string = '',
+): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const bytes = randomBytes(length);
   let randomStr = '';

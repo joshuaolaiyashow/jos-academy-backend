@@ -14,25 +14,74 @@ datasource db {
 }
 
 model User {
-  id                 String            @id @default(uuid())
-  email              String            @unique
-  name               String
-  password           String
-  referralCode       String?           @unique
-  isEmailVerified    Boolean           @default(false)
-  role               UserRole          @default(USER)
-  phone              String?
-  country            String?
-  fieldOfExpertise   String?
-  teachingExperience String?
-  availability       AvailabilityType?
-  credits            Int               @default(0)
-  verifications      Verification[]
-  enrollments        Enrollment[]
-  payments           Payment[]
-  creditTransactions CreditTransaction[]
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  id                     String                       @id @default(uuid())
+  email                  String                       @unique
+  name                   String
+  password               String
+  referralCode           String?                      @unique
+  // Who invited this user (their referralCode at sign-up), and when the one-time
+  // referee discount on their first purchase was spent.
+  referredById           String?
+  referredBy             User?                        @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals              User[]                       @relation("Referrals")
+  referralDiscountUsedAt DateTime?
+  isEmailVerified        Boolean                      @default(false)
+  role                   UserRole                     @default(USER)
+  phone                  String?
+  country                String?
+  fieldOfExpertise       String?
+  teachingExperience     String?
+  availability           AvailabilityType?
+  avatarUrl              String?
+  bio                    String?
+  credits                Int                          @default(0)
+  isSuspended            Boolean                      @default(false)
+  mustChangePassword     Boolean                      @default(false)
+  verifications          Verification[]
+  enrollments            Enrollment[]
+  payments               Payment[]
+  creditTransactions     CreditTransaction[]
+  lessonProgress         LessonProgress[]
+  liveSessions           LiveSession[]                @relation("CreatorSessions")
+  sessionAttendance      SessionAttendance[]
+  notifications          Notification[]
+  createdCourses         Course[]                     @relation("CreatedCourses")
+  refreshTokens          RefreshToken[]
+  discountRedemptions    DiscountRedemption[]
+  onboarding             StudentOnboarding?
+  badges                 UserBadge[]
+  reviews                Review[]
+  certificates           Certificate[]
+  lessonNotes            LessonNote[]
+  lessonDiscussions      LessonDiscussion[]
+  assignmentSubmissions  AssignmentSubmission[]
+  projectSubmissions     ProjectMilestoneSubmission[]
+  notificationPreference NotificationPreference?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+
+  @@index([referredById])
+}
+
+// Email opt-outs. No row means every email is on.
+model NotificationPreference {
+  userId                String   @id
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAssignmentGraded Boolean  @default(true)
+  emailLiveSessions     Boolean  @default(true)
+  updatedAt             DateTime @updatedAt
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Verification {
@@ -46,16 +95,16 @@ model Verification {
 }
 
 model Category {
-  id          String    @id @default(uuid())
-  name        String    @unique
+  id          String   @id @default(uuid())
+  name        String   @unique
   description String?
   courses     Course[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Course {
-  id                    String        @id @default(uuid())
+  id                    String       @id @default(uuid())
   name                  String
   shortDescription      String
   fullDescription       String
@@ -70,63 +119,260 @@ model Course {
   capstoneRequired      Boolean?
   careerSupportIncluded Boolean?
 
-  categoryId            String?
-  category              Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
-  modules               Modules[]
-  enrollments           Enrollment[]
-  payments              Payment[]
-  creditTransactions    CreditTransaction[]
-  
+  creatorId String?
+  creator   User?   @relation("CreatedCourses", fields: [creatorId], references: [id], onDelete: SetNull)
+
+  modules            Modules[]
+  enrollments        Enrollment[]
+  payments           Payment[]
+  creditTransactions CreditTransaction[]
+  liveSessions       LiveSession[]
+  reviews            Review[]
+  certificates       Certificate[]
+  projects           CourseProject[]
+  cohorts            Cohort[]
+
+  // Defaults to ACTIVE so pre-existing courses stay live; new courses are
+  // created as DRAFT in CourseService.createCourse.
+  status               CourseStatus @default(ACTIVE)
+
   @@index([id])
   @@index([categoryId])
 }
 
 model Modules {
-  id               String           @id @default(uuid())
+  id               String @id @default(uuid())
   title            String
   description      String
   lessonsCount     Int
   assignmentsCount Int?
+  order            Int    @default(0)
 
-  courseId         String
-  course           Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  assignments      Assignments[]
-  enrolledModules  EnrolledModule[]
-  payments         Payment[]
+  courseId           String
+  course             Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  assignments        Assignments[]
+  enrolledModules    EnrolledModule[]
+  payments           Payment[]
   creditTransactions CreditTransaction[]
+  lessons            Lesson[]
+  liveSessions       LiveSession[]
+  cohortSchedules    CohortModule[]
 
   @@index([courseId])
 }
 
+model Lesson {
+  id          String            @id @default(uuid())
+  title       String
+  description String?
+  contentType LessonContentType
+  videoUrl    String?
+  content     String?
+  duration    Int?
+  order       Int               @default(0)
+
+  videoProcessingStatus LessonVideoStatus?
+  videoProcessingError  String?
+
+  moduleId    String
+  module      Modules            @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress    LessonProgress[]
+  notes       LessonNote[]
+  discussions LessonDiscussion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([moduleId])
+}
+
+model LessonProgress {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId    String
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+}
+
+model LiveSession {
+  id           String            @id @default(uuid())
+  title        String
+  type         SessionType
+  platform     SessionPlatform
+  meetingLink  String?
+  /// Replay link the host adds after the session; shown to the cohort's learners, including rewatch buyers.
+  recordingUrl String?
+  scheduledAt  DateTime
+  durationMins Int
+  status       LiveSessionStatus @default(SCHEDULED)
+
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  moduleId  String?
+  module    Modules? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  cohortId  String?
+  cohort    Cohort?  @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  creatorId String
+  creator   User     @relation("CreatorSessions", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  attendance SessionAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId])
+  @@index([cohortId])
+  @@index([creatorId])
+}
+
+model SessionAttendance {
+  id        String           @id @default(uuid())
+  sessionId String
+  session   LiveSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime?
+  leftAt    DateTime?
+  status    AttendanceStatus @default(REGISTERED)
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String
+  /// In-app path the notification opens (e.g. /programs/:id/lessons/:lessonId).
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model Assignments {
-  id               String        @id @default(uuid())
-  title            String?
-  moduleId         String
-  module           Modules       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid())
+  title       String?
+  description String?   @db.Text
+  maxScore    Int       @default(100)
+  /// [{ id, question, responseType, description?, options? }]
+  questions   Json      @default("[]")
+  /// Null while the creator is still drafting; learners only see published ones.
+  publishedAt DateTime?
+  moduleId    String
+  module      Modules   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  submissions AssignmentSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@index([id, moduleId])
 }
 
-model Enrollment {
-  id              String            @id @default(uuid())
-  userId          String
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  courseId        String
-  course          Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+enum AssignmentSubmissionStatus {
+  SUBMITTED
+  GRADED
+}
 
-  type            EnrollmentType    @default(FULL_COURSE)
-  status          EnrollmentStatus  @default(PENDING)
+model AssignmentSubmission {
+  id           String                     @id @default(uuid())
+  assignmentId String
+  assignment   Assignments                @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// [{ questionId, text?, fileKey?, fileName? }]
+  answers      Json
+  notes        String?                    @db.Text
+  status       AssignmentSubmissionStatus @default(SUBMITTED)
+  score        Int?
+  feedback     String?                    @db.Text
+  submittedAt  DateTime                   @default(now())
+  gradedAt     DateTime?
+  updatedAt    DateTime                   @updatedAt
+
+  @@unique([assignmentId, userId])
+  @@index([userId])
+}
+
+enum CourseProjectStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+model CourseProject {
+  id          String              @id @default(uuid())
+  courseId    String
+  course      Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  description String              @db.Text
+  /// Ordered milestone labels; learners submit them in order.
+  milestones  String[]
+  status      CourseProjectStatus @default(ACTIVE)
+
+  submissions ProjectMilestoneSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId])
+}
+
+model ProjectMilestoneSubmission {
+  id             String        @id @default(uuid())
+  projectId      String
+  project        CourseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestoneIndex Int
+  url            String
+  notes          String?       @db.Text
+  submittedAt    DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([projectId, userId, milestoneIndex])
+  @@index([userId])
+}
+
+model Enrollment {
+  id       String  @id @default(uuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId String
+  course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  /// The learner's seat. One per program; moving cohorts updates this. Required once checkout picks a cohort.
+  cohortId String?
+  cohort   Cohort? @relation(fields: [cohortId], references: [id], onDelete: Restrict)
+
+  type   EnrollmentType   @default(FULL_COURSE)
+  status EnrollmentStatus @default(PENDING)
 
   enrolledModules EnrolledModule[]
   payments        Payment[]
 
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
+  @@index([cohortId])
 }
 
 model EnrolledModule {
@@ -136,7 +382,7 @@ model EnrolledModule {
   moduleId     String
   module       Modules    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
-  unlockedAt   DateTime   @default(now())
+  unlockedAt DateTime @default(now())
 
   @@unique([enrollmentId, moduleId])
   @@index([enrollmentId])
@@ -144,51 +390,139 @@ model EnrolledModule {
 }
 
 model Payment {
-  id           String        @id @default(uuid())
+  id           String      @id @default(uuid())
   userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   courseId     String?
-  course       Course?       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  course       Course?     @relation(fields: [courseId], references: [id], onDelete: Cascade)
   moduleId     String?
-  module       Modules?      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  module       Modules?    @relation(fields: [moduleId], references: [id], onDelete: SetNull)
   enrollmentId String?
-  enrollment   Enrollment?   @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+  enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
 
-  amount       Int           // Amount in Naira
-  credits      Int?          // Amount in Credits (for top ups)
-  reference    String        @unique // Paystack transaction reference
-  status       PaymentStatus @default(PENDING)
-  type         PaymentType
+  discountCampaignId     String?
+  discountAmount         Int? // Naira saved by a discount code on this payment
+  referralDiscountAmount Int? // Naira saved by the one-time referee discount
 
-  paidAt       DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  amount    Int // Amount in Naira (after any discount)
+  credits   Int? // Amount in Credits (for top ups)
+  reference String        @unique // Paystack transaction reference
+  status    PaymentStatus @default(PENDING)
+  type      PaymentType
+
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([userId])
   @@index([courseId])
   @@index([reference])
 }
 
+// One review per student per course, only after they complete it (see
+// ReviewService.upsertReview). userId+courseId unique so a resubmission
+// edits their existing review instead of creating a duplicate.
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
 model CreditTransaction {
   id           String                @id @default(uuid())
   userId       String
   user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount       Int                   // Positive for added credits (+), Negative for deducted credits (-)
-  balanceAfter Int                   // User credit balance after transaction
+  amount       Int // Positive for added credits (+), Negative for deducted credits (-)
+  balanceAfter Int // User credit balance after transaction
   type         CreditTransactionType
   description  String?
-  reference    String?               // Paystack reference or internal transaction ID
+  reference    String? // Paystack reference or internal transaction ID
 
-  courseId     String?
-  course       Course?               @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  moduleId     String?
-  module       Modules?              @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  courseId String?
+  course   Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  moduleId String?
+  module   Modules? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
 
-  createdAt    DateTime              @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([courseId])
   @@index([reference])
+}
+
+enum CohortStatus {
+  /// Being scheduled; invisible to learners.
+  DRAFT
+  /// Submitted at least COHORT_REVIEW_LEAD_DAYS before it starts.
+  PENDING_REVIEW
+  /// An admin picked it up; the creator can't edit until the review ends.
+  IN_REVIEW
+  /// Sent back with a reason; the creator edits and resubmits.
+  CHANGES_REQUESTED
+  /// Visible and sellable. Open, running or finished follows from its dates.
+  APPROVED
+  CANCELLED
+}
+
+/// One run of a program: learners in it share module dates, live sessions and demo day.
+model Cohort {
+  id                 String       @id @default(uuid())
+  courseId           String
+  course             Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  name               String
+  startsAt           DateTime
+  /// No new seats after this until the cohort ends; then it sells as a rewatch.
+  enrollmentClosesAt DateTime
+  endsAt             DateTime
+  seatCap            Int
+  demoDayAt          DateTime?
+  status             CohortStatus @default(DRAFT)
+  submittedAt        DateTime?
+  /// Why the admin requested changes; cleared on resubmit and approval.
+  reviewNote         String?
+  reviewAttachments  String[]     @default([])
+
+  modules      CohortModule[]
+  enrollments  Enrollment[]
+  liveSessions LiveSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courseId, startsAt])
+  @@index([status])
+}
+
+/// When a module starts for one cohort.
+model CohortModule {
+  id       String   @id @default(uuid())
+  cohortId String
+  cohort   Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  moduleId String
+  module   Modules  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  startsAt DateTime
+
+  @@unique([cohortId, moduleId])
+  @@index([moduleId])
+}
+
+enum CourseStatus {
+  DRAFT
+  PENDING_REVIEW
+  /// An admin has started reviewing; the creator can no longer edit until it is rejected.
+  IN_REVIEW
+  ACTIVE
+  REJECTED
 }
 
 enum UserRole {
@@ -200,6 +534,9 @@ enum UserRole {
 enum VerificationType {
   EMAIL_VERIFICATION
   PASSWORD_RESET
+  // One-time code handed to the frontend after an OAuth callback; exchanged
+  // for a token pair so access/refresh tokens never appear in a URL.
+  OAUTH_EXCHANGE
 }
 
 enum DurationType {
@@ -247,4 +584,283 @@ enum CreditTransactionType {
   COURSE_PURCHASE
   MODULE_PURCHASE
   REFUND
+}
+
+enum LessonContentType {
+  video
+  note
+  code
+}
+
+enum LessonVideoStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+enum SessionType {
+  Lecture
+  Workshop
+  QandA
+}
+
+enum SessionPlatform {
+  Zoom
+  GoogleMeet
+  MicrosoftTeams
+}
+
+enum LiveSessionStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  REGISTERED
+  ATTENDED
+  MISSED
+}
+
+enum DiscountAppliesTo {
+  CREDIT_TOP_UP
+  COURSE_PURCHASE
+  ALL
+}
+
+enum DiscountTarget {
+  CREDIT_TOP_UP
+  COURSE_PURCHASE
+}
+
+model DiscountCampaign {
+  id             String            @id @default(uuid())
+  name           String
+  code           String            @unique
+  description    String?
+  percentOff     Int
+  appliesTo      DiscountAppliesTo @default(ALL)
+  startsAt       DateTime
+  endsAt         DateTime
+  maxRedemptions Int?
+  perUserLimit   Int               @default(1)
+  isActive       Boolean           @default(true)
+  createdById    String?
+
+  redemptions DiscountRedemption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+// One row per use of a campaign. Amounts are Naira for CREDIT_TOP_UP and
+// credits for COURSE_PURCHASE.
+model DiscountRedemption {
+  id             String           @id @default(uuid())
+  campaignId     String
+  campaign       DiscountCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target         DiscountTarget
+  originalAmount Int
+  discountAmount Int
+  finalAmount    Int
+  reference      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([campaignId])
+  @@index([userId])
+  @@index([campaignId, userId])
+}
+
+enum AcademicBackgroundType {
+  UPLOAD_ACADEMIC_RESULTS
+  JOS_LEARNING_ASSESSMENT
+}
+
+enum EducationLevel {
+  JUNIOR_SECONDARY_SCHOOL
+  SENIOR_SECONDARY_SCHOOL
+  POLYTECHNIC
+  UNIVERSITY
+  GRADUATE
+  WORKING_PROFESSIONAL
+  OTHER
+}
+
+enum OnboardingStep {
+  INTERESTS
+  EDUCATION
+  EXPERIENCE
+  BACKGROUND
+  DONE
+}
+
+enum PracticalExperience {
+  NEVER_BUILT_ANYTHING
+  COMPLETED_PERSONAL_PROJECTS
+  PARTICIPATED_IN_COMPETITIONS
+  WORKED_PROFESSIONALLY
+  UPLOAD_WORK
+}
+
+model StudentOnboarding {
+  id                     String                  @id @default(uuid())
+  userId                 String                  @unique
+  user                   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interests              String[]                @default([])
+  otherInterest          String?
+  educationLevel         EducationLevel?
+  otherEducationLevel    String?
+  institutionName        String?
+  currentClassOrLevel    String?
+  expectedGraduationYear String?
+  practicalExperience    PracticalExperience?
+  workPortfolioUrl       String?
+  workAttachmentUrl      String?
+  workSamples            Json?
+  academicBackgroundType AcademicBackgroundType?
+  academicResultsUrl     String?
+  academicResultsType    String?
+  academicDocuments      Json?
+  assessmentScore        Int?
+  assessmentTotal        Int?                    @default(16)
+  assessmentAnswers      Json?
+  assessmentCompleted    Boolean                 @default(false)
+  currentStep            OnboardingStep          @default(INTERESTS)
+  isCompleted            Boolean                 @default(false)
+  completedAt            DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  @@index([userId])
+}
+
+model AssessmentQuestion {
+  id        String   @id @default(uuid())
+  subject   String
+  prompt    String
+  options   Json
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, order])
+}
+
+enum BadgeTriggerType {
+  COURSE_COMPLETION
+  MODULE_COMPLETION
+  COURSES_COMPLETED_MILESTONE
+  COURSES_PURCHASED_MILESTONE
+  MODULES_PURCHASED_MILESTONE
+  CREDIT_PURCHASES_MILESTONE
+  MANUAL
+}
+
+model Badge {
+  id            String           @id @default(uuid())
+  name          String
+  description   String
+  icon          String
+  triggerType   BadgeTriggerType
+  triggerConfig Json?
+  order         Int              @default(0)
+  isActive      Boolean          @default(true)
+  earnedBy      UserBadge[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([isActive, order])
+  @@index([triggerType])
+}
+
+model UserBadge {
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId  String
+  badge    Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  earnedAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+  @@index([badgeId])
+}
+
+// Issued once a learner completes every lesson in a course. Recipient and course
+// names are snapshotted so a certificate never changes after it is issued.
+model Certificate {
+  id            String   @id @default(uuid())
+  serial        String   @unique
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId      String
+  course        Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  recipientName String
+  courseName    String
+  issuedAt      DateTime @default(now())
+
+  @@unique([userId, courseId])
+  @@index([userId])
+}
+
+model LessonNote {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId  String
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, lessonId])
+}
+
+// Threads are rows with no parent; replies point at their thread. Replies are
+// one level deep only — replying to a reply attaches to the same thread.
+model LessonDiscussion {
+  id        String             @id @default(uuid())
+  lessonId  String
+  lesson    Lesson             @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String             @db.Text
+  parentId  String?
+  parent    LessonDiscussion?  @relation("DiscussionReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   LessonDiscussion[] @relation("DiscussionReplies")
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([lessonId, createdAt])
+  @@index([parentId])
+}
+
+/// Append-only record of security-relevant and administrative actions. No foreign
+/// keys on purpose: entries must outlive the users and records they describe.
+model AuditLog {
+  id         String    @id @default(uuid())
+  /// Null for anonymous events, e.g. a failed sign-in for an unknown email.
+  actorId    String?
+  actorRole  UserRole?
+  /// Dotted verb such as "course.approve" or "auth.sign_in_failed" (see audit-actions.ts).
+  action     String
+  targetType String?
+  targetId   String?
+  /// Context such as a rejection reason or old/new values. Never secrets or passwords.
+  metadata   Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
 }

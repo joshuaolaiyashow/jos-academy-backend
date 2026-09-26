@@ -27,9 +27,7 @@ export class FileUploadService {
 
   constructor() {
     this.region =
-      process.env.AWS_REGION ||
-      process.env.AWS_DEFAULT_REGION ||
-      'us-east-1';
+      process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1';
 
     const accessKeyId =
       process.env.AWS_ACCESS_KEY_ID || process.env.ACCESS_KEY || '';
@@ -64,6 +62,7 @@ export class FileUploadService {
   async uploadFile(
     file: Express.Multer.File,
     folder: string = 'general',
+    { asAttachment = false }: { asAttachment?: boolean } = {},
   ): Promise<UploadResult> {
     if (!file) {
       throw new BadRequestException('No file provided for upload');
@@ -84,6 +83,10 @@ export class FileUploadService {
           Key: key,
           Body: file.buffer,
           ContentType: file.mimetype,
+          // User-supplied files must download, never render inline in a browser.
+          ContentDisposition: asAttachment
+            ? `attachment; filename="${sanitizedOriginalName}"`
+            : undefined,
         }),
       );
 
@@ -100,8 +103,13 @@ export class FileUploadService {
         size: file.size,
       };
     } catch (error: any) {
-      this.logger.error(`❌ Failed to upload file to S3 (${key}):`, error.message);
-      throw new BadRequestException(`Failed to upload file to S3: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to upload file to S3 (${key}):`,
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to upload file to S3: ${error.message}`,
+      );
     }
   }
 
@@ -145,8 +153,13 @@ export class FileUploadService {
         bucket: this.bucketName,
       };
     } catch (error: any) {
-      this.logger.error(`❌ Failed to delete file from S3 (${key}):`, error.message);
-      throw new BadRequestException(`Failed to delete file from S3: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to delete file from S3 (${key}):`,
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to delete file from S3: ${error.message}`,
+      );
     }
   }
 
@@ -155,7 +168,10 @@ export class FileUploadService {
    * @param key S3 Object Key
    * @param expiresInSeconds Expiry duration in seconds (default 1 hour)
    */
-  async getPresignedUrl(key: string, expiresInSeconds: number = 3600): Promise<string> {
+  async getPresignedUrl(
+    key: string,
+    expiresInSeconds: number = 3600,
+  ): Promise<string> {
     if (!key) {
       throw new BadRequestException('File key is required');
     }
@@ -170,8 +186,13 @@ export class FileUploadService {
         expiresIn: expiresInSeconds,
       });
     } catch (error: any) {
-      this.logger.error(`❌ Failed to generate presigned URL for ${key}:`, error.message);
-      throw new BadRequestException(`Failed to generate presigned URL: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to generate presigned URL for ${key}:`,
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to generate presigned URL: ${error.message}`,
+      );
     }
   }
 }

@@ -1,6 +1,12 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
+import { MODULE_ORDER_BY } from '../course-module/module-order';
 
 @Injectable()
 export class CategoryService {
@@ -29,7 +35,9 @@ export class CategoryService {
       },
     });
 
-    this.logger.log(`📂 Category created successfully: ${category.name} (ID: ${category.id})`);
+    this.logger.log(
+      `📂 Category created successfully: ${category.name} (ID: ${category.id})`,
+    );
 
     return {
       message: 'Category created successfully',
@@ -74,7 +82,7 @@ export class CategoryService {
       include: {
         courses: {
           include: {
-            modules: true,
+            modules: { orderBy: MODULE_ORDER_BY },
           },
         },
       },

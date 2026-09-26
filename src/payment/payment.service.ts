@@ -129,7 +129,10 @@ export class PaymentService {
       this.logger.log(`💳 Payment initialized: Ref ${data.data.reference}`);
       return data.data;
     } catch (error: any) {
-      this.logger.error('Error initializing Paystack transaction:', error.message);
+      this.logger.error(
+        'Error initializing Paystack transaction:',
+        error.message,
+      );
       if (error instanceof BadRequestException) throw error;
       throw new InternalServerErrorException(
         error.message || 'Payment initialization failed',
@@ -142,7 +145,9 @@ export class PaymentService {
    * @param reference Unique transaction reference string
    * @returns Verified transaction data
    */
-  async verifyPayment(reference: string): Promise<PaystackVerifyResponse['data']> {
+  async verifyPayment(
+    reference: string,
+  ): Promise<PaystackVerifyResponse['data']> {
     if (!reference) {
       throw new BadRequestException('Transaction reference is required');
     }

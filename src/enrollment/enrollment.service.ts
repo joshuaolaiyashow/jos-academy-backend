@@ -7,19 +7,37 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PurchaseCourseDto } from './dto/purchase-course.dto';
+import { DiscountService } from '../discount/discount.service';
+import { BadgesService } from '../badges/badges.service';
+import { ReferralService } from '../referral/referral.service';
 import {
   CreditTransactionType,
+  DiscountTarget,
   EnrollmentStatus,
   EnrollmentType,
+  CourseStatus,
+  CohortStatus,
 } from '../generated/prisma/client';
 import { randomBytes } from 'crypto';
 import { NAIRA_PER_CREDIT } from '../credit/credit.service';
+import { MODULE_ORDER_BY } from '../course-module/module-order';
+import {
+  ENROLLMENT_ACCESS_STATUSES,
+  hasEnrollmentAccess,
+} from './enrollment-access';
+import { cohortSalesPhase } from '../cohort/cohort-phase';
+import { formatDateOnly } from '../utils';
 
 @Injectable()
 export class EnrollmentService {
   private readonly logger = new Logger(EnrollmentService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly discountService: DiscountService,
+    private readonly badgesService: BadgesService,
+    private readonly referrals: ReferralService,
+  ) {}
 
   /**
    * Calculate course and module credit requirements
@@ -36,7 +54,8 @@ export class EnrollmentService {
    * Purchase a Course (Full Course or Module-by-Module) using user's Credit Wallet
    */
   async purchaseWithCredits(userId: string, dto: PurchaseCourseDto) {
-    const { courseId, type, moduleId } = dto;
+    const { courseId, type, moduleId, discountCode } = dto;
+    const now = new Date();
 
     // 1. Fetch user
     const user = await this.prisma.user.findUnique({
@@ -50,13 +69,16 @@ export class EnrollmentService {
     const course = await this.prisma.course.findUnique({
       where: { id: courseId },
       include: {
-        modules: {
-          orderBy: { id: 'asc' },
-        },
+        modules: { orderBy: MODULE_ORDER_BY },
       },
     });
     if (!course) {
       throw new NotFoundException(`Course with ID "${courseId}" not found`);
+    }
+    if (course.status !== CourseStatus.ACTIVE) {
+      throw new BadRequestException(
+        'This course is not open for enrollment yet.',
+      );
     }
 
     const totalModules = course.modules.length;
@@ -85,13 +107,19 @@ export class EnrollmentService {
 
     if (
       existingEnrollment &&
-      existingEnrollment.status === EnrollmentStatus.ACTIVE &&
+      hasEnrollmentAccess(existingEnrollment.status) &&
       existingEnrollment.type === EnrollmentType.FULL_COURSE
     ) {
       throw new ConflictException(
         'You already own full access to this course.',
       );
     }
+
+    const seat = await this.resolveCohortSeat(
+      existingEnrollment?.cohortId ?? null,
+      dto,
+      now,
+    );
 
     let requiredCredits: number;
     let targetModuleId: string | null = null;
@@ -139,7 +167,23 @@ export class EnrollmentService {
       throw new BadRequestException('Invalid enrollment type');
     }
 
-    // 5. Verify user has sufficient credit balance
+    // 5. Apply the discount code, if any, then verify sufficient balance
+    const fullPriceCredits = requiredCredits;
+    if (discountCode) {
+      const preview = await this.discountService.resolveDiscount(
+        userId,
+        discountCode,
+        DiscountTarget.COURSE_PURCHASE,
+        fullPriceCredits,
+      );
+      requiredCredits = preview.finalAmount;
+    }
+    // The referee discount never stacks with a code; it waits for a purchase without one.
+    const referralDiscount = discountCode
+      ? 0
+      : await this.referrals.discountFor(userId, fullPriceCredits);
+    requiredCredits -= referralDiscount;
+
     if (user.credits < requiredCredits) {
       const shortBy = requiredCredits - user.credits;
       throw new BadRequestException({
@@ -156,10 +200,54 @@ export class EnrollmentService {
       });
     }
 
+    if (seat.isNew && seat.phase === 'OPEN') {
+      // Checked again under a row lock inside the transaction; this early check
+      // just saves a round of discount and balance work for a full cohort.
+      await this.assertSeatAvailable(this.prisma, seat.cohortId, seat.seatCap);
+    }
+
     const txReference = `JOS-PUR-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
 
     // 6. Execute atomic deduction, transaction log, and enrollment activation
     const result = await this.prisma.$transaction(async (tx) => {
+      if (seat.isNew && seat.phase === 'OPEN') {
+        // Lock the cohort row so two buyers can't both take the last seat.
+        await tx.$queryRaw`SELECT id FROM "Cohort" WHERE id = ${seat.cohortId} FOR UPDATE`;
+        await this.assertSeatAvailable(tx, seat.cohortId, seat.seatCap);
+      }
+
+      // Re-check the code inside the transaction so concurrent purchases
+      // cannot exceed its limits, then record the redemption.
+      let discountAmount = 0;
+      if (discountCode) {
+        const applied = await this.discountService.resolveDiscount(
+          userId,
+          discountCode,
+          DiscountTarget.COURSE_PURCHASE,
+          fullPriceCredits,
+          tx,
+        );
+        discountAmount = applied.discountAmount;
+        await this.discountService.recordRedemption(tx, {
+          campaignId: applied.campaignId,
+          userId,
+          target: DiscountTarget.COURSE_PURCHASE,
+          originalAmount: applied.originalAmount,
+          discountAmount: applied.discountAmount,
+          finalAmount: applied.finalAmount,
+          reference: txReference,
+        });
+      }
+
+      if (
+        referralDiscount > 0 &&
+        !(await this.referrals.claimDiscount(tx, userId))
+      ) {
+        throw new ConflictException(
+          'Your referral discount was just used on another purchase. Please try again.',
+        );
+      }
+
       // Deduct credits from user wallet
       const updatedUser = await tx.user.update({
         where: { id: userId },
@@ -190,10 +278,12 @@ export class EnrollmentService {
         create: {
           userId,
           courseId,
+          cohortId: seat.cohortId,
           type,
           status: EnrollmentStatus.ACTIVE,
         },
         update: {
+          cohortId: seat.cohortId,
           status: EnrollmentStatus.ACTIVE,
           ...(type === EnrollmentType.FULL_COURSE
             ? { type: EnrollmentType.FULL_COURSE }
@@ -252,12 +342,15 @@ export class EnrollmentService {
         user: updatedUser,
         creditTx,
         enrollment,
+        discountAmount,
       };
     });
 
     this.logger.log(
       `🎉 Purchase successful for ${user.email}: Course "${course.name}", Type: ${type}, Credits Deducted: ${requiredCredits}, New Balance: ${result.user.credits}`,
     );
+
+    await this.badgesService.evaluateEnrollmentPurchase(userId, type);
 
     return {
       message: `${type === EnrollmentType.FULL_COURSE ? 'Course' : `Module "${targetModuleTitle}"`} purchased successfully with credits!`,
@@ -266,11 +359,84 @@ export class EnrollmentService {
       purchaseType: type,
       moduleId: targetModuleId,
       creditsDeducted: requiredCredits,
+      originalCredits: fullPriceCredits,
+      discountCredits: result.discountAmount,
+      referralDiscountCredits: referralDiscount,
       remainingBalance: result.user.credits,
       remainingNairaEquivalent: result.user.credits * NAIRA_PER_CREDIT,
       reference: txReference,
       enrollmentId: result.enrollment.id,
+      cohortId: seat.cohortId,
     };
+  }
+
+  /**
+   * Which cohort this purchase lands in. A learner keeps one seat per program:
+   * the first purchase picks a cohort, later ones stay in it. New seats are sold
+   * while a cohort is open and again (uncapped) once it has ended, as a rewatch.
+   * A learner who already has a seat can add a module until it starts.
+   */
+  private async resolveCohortSeat(
+    seatCohortId: string | null,
+    dto: PurchaseCourseDto,
+    now: Date,
+  ) {
+    if (seatCohortId && dto.cohortId && dto.cohortId !== seatCohortId) {
+      throw new ConflictException(
+        'You already have a seat in another cohort of this program. Contact support to switch.',
+      );
+    }
+    const cohortId = seatCohortId ?? dto.cohortId;
+    if (!cohortId) {
+      throw new BadRequestException('Pick a cohort to join.');
+    }
+    const cohort = await this.prisma.cohort.findFirst({
+      where: {
+        id: cohortId,
+        courseId: dto.courseId,
+        status: CohortStatus.APPROVED,
+      },
+      include: { modules: { select: { moduleId: true, startsAt: true } } },
+    });
+    if (!cohort) {
+      throw new BadRequestException('That cohort is not open for enrollment.');
+    }
+
+    const phase = cohortSalesPhase(cohort, now);
+    const isNew = !seatCohortId;
+    if (phase === 'CLOSED') {
+      if (isNew) {
+        throw new BadRequestException(
+          `Enrollment for ${cohort.name} has closed. It reopens as a rewatch on ${formatDateOnly(cohort.endsAt)}.`,
+        );
+      }
+      const moduleStart = cohort.modules.find(
+        (entry) => entry.moduleId === dto.moduleId,
+      )?.startsAt;
+      if (
+        dto.type === EnrollmentType.MODULAR &&
+        moduleStart &&
+        moduleStart <= now
+      ) {
+        throw new BadRequestException(
+          'This module has already started for your cohort. You can buy it once the cohort ends.',
+        );
+      }
+    }
+    return { cohortId, phase, isNew, seatCap: cohort.seatCap };
+  }
+
+  private async assertSeatAvailable(
+    db: Pick<PrismaService, 'enrollment'>,
+    cohortId: string,
+    seatCap: number,
+  ): Promise<void> {
+    const taken = await db.enrollment.count({
+      where: { cohortId, status: { in: ENROLLMENT_ACCESS_STATUSES } },
+    });
+    if (taken >= seatCap) {
+      throw new ConflictException('This cohort is full.');
+    }
   }
 
   /**
@@ -283,7 +449,7 @@ export class EnrollmentService {
         course: {
           include: {
             category: true,
-            modules: true,
+            modules: { orderBy: MODULE_ORDER_BY },
           },
         },
         enrolledModules: {
@@ -299,25 +465,58 @@ export class EnrollmentService {
 
     return {
       total: enrollments.length,
-      enrollments: enrollments.map((enr) => ({
-        id: enr.id,
-        courseId: enr.courseId,
-        courseName: enr.course.name,
-        heroImage: enr.course.heroImageName,
-        category: enr.course.category?.name || null,
-        type: enr.type,
-        status: enr.status,
-        totalCourseModules: enr.course.modules.length,
-        unlockedModulesCount:
-          enr.type === EnrollmentType.FULL_COURSE
-            ? enr.course.modules.length
-            : enr.enrolledModules.length,
-        unlockedModules:
-          enr.type === EnrollmentType.FULL_COURSE
-            ? enr.course.modules
-            : enr.enrolledModules.map((em) => em.module),
-        createdAt: enr.createdAt,
-      })),
+      enrollments: await Promise.all(
+        enrollments.map(async (enr) => {
+          const unlockedModules =
+            enr.type === EnrollmentType.FULL_COURSE
+              ? enr.course.modules
+              : enr.enrolledModules.map((em) => em.module);
+          const progress = await this.getLessonProgress(
+            userId,
+            unlockedModules.map((module) => module.id),
+          );
+          return {
+            id: enr.id,
+            courseId: enr.courseId,
+            cohortId: enr.cohortId,
+            courseName: enr.course.name,
+            heroImage: enr.course.heroImageName,
+            category: enr.course.category?.name || null,
+            type: enr.type,
+            status: enr.status,
+            totalCourseModules: enr.course.modules.length,
+            unlockedModulesCount: unlockedModules.length,
+            unlockedModules,
+            ...progress,
+            createdAt: enr.createdAt,
+          };
+        }),
+      ),
+    };
+  }
+
+  /**
+   * Lessons finished out of the lessons the learner can open. "Progress" means
+   * lessons completed, not modules bought (that is unlockedModulesCount).
+   */
+  private async getLessonProgress(userId: string, moduleIds: string[]) {
+    const [totalLessonsCount, completedLessonsCount] = await Promise.all([
+      this.prisma.lesson.count({ where: { moduleId: { in: moduleIds } } }),
+      this.prisma.lessonProgress.count({
+        where: {
+          userId,
+          completed: true,
+          lesson: { moduleId: { in: moduleIds } },
+        },
+      }),
+    ]);
+    return {
+      completedLessonsCount,
+      totalLessonsCount,
+      progressPercent:
+        totalLessonsCount > 0
+          ? Math.round((completedLessonsCount / totalLessonsCount) * 100)
+          : 0,
     };
   }
 
@@ -338,7 +537,7 @@ export class EnrollmentService {
       },
     });
 
-    if (!enrollment || enrollment.status !== EnrollmentStatus.ACTIVE) {
+    if (!enrollment || !hasEnrollmentAccess(enrollment.status)) {
       return { hasAccess: false };
     }
 

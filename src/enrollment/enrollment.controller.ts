@@ -37,7 +37,8 @@ export class EnrollmentController {
     description: 'Course or module unlocked successfully.',
     schema: {
       example: {
-        message: 'Module "Frontend Basics" purchased successfully with credits!',
+        message:
+          'Module "Frontend Basics" purchased successfully with credits!',
         courseId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         courseName: 'Full-Stack Web Development Bootcamp',
         purchaseType: 'MODULAR',

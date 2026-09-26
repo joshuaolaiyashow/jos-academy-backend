@@ -16,7 +16,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'super_secret_jwt_key_jos_academy_2026',
+      secretOrKey:
+        process.env.JWT_SECRET || 'super_secret_jwt_key_jos_academy_2026',
     });
   }
 
@@ -35,6 +36,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         name: true,
         role: true,
         isEmailVerified: true,
+        isSuspended: true,
+        mustChangePassword: true,
         referralCode: true,
         createdAt: true,
       },
@@ -47,6 +50,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user.isEmailVerified) {
       throw new UnauthorizedException(
         'Please verify your email address to access this resource',
+      );
+    }
+
+    if (user.isSuspended) {
+      throw new UnauthorizedException(
+        'This account has been suspended. Contact support for help.',
       );
     }
 

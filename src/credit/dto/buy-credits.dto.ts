@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsPositive, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsInt, IsOptional, IsPositive, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class BuyCreditsDto {
@@ -14,4 +14,12 @@ export class BuyCreditsDto {
   @IsPositive({ message: 'credits must be a positive number' })
   @Min(1, { message: 'Minimum credit purchase is 1 credit' })
   credits: number;
+
+  @ApiPropertyOptional({
+    example: 'LAUNCH20',
+    description: 'Optional discount code',
+  })
+  @IsOptional()
+  @IsString()
+  discountCode?: string;
 }

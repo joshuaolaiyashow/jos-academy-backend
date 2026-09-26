@@ -1,17 +1,31 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
     const connectionString = process.env.DATABASE_URL;
     const pool = new Pool({
       connectionString,
-      ssl: { rejectUnauthorized: false },
+      // Neon requires TLS; a local Docker Postgres (tests, dev) has none.
+      // Ignored in production so a copied env var can never drop TLS there.
+      ssl:
+        process.env.DATABASE_SSL === 'false' &&
+        process.env.NODE_ENV !== 'production'
+          ? false
+          : { rejectUnauthorized: false },
     });
     const adapter = new PrismaPg(pool);
     super({ adapter });
