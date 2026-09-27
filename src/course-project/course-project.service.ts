@@ -52,6 +52,7 @@ export class CourseProjectService {
         title: dto.title.trim(),
         description: dto.description.trim(),
         milestones: dto.milestones.map((milestone) => milestone.trim()),
+        demoDay: dto.demoDay ? new Date(dto.demoDay) : null,
       },
     });
   }
@@ -67,6 +68,10 @@ export class CourseProjectService {
       data: {
         title: dto.title?.trim(),
         description: dto.description?.trim(),
+        demoDay:
+          dto.demoDay === undefined
+            ? undefined
+            : dto.demoDay && new Date(dto.demoDay),
         status: dto.status,
       },
     });
@@ -141,17 +146,8 @@ export class CourseProjectService {
       },
       orderBy: { createdAt: 'asc' },
     });
-    const cohortId = await this.courseAccess.learnerCohortId(user, courseId);
-    const cohort = cohortId
-      ? await this.prisma.cohort.findUnique({
-          where: { id: cohortId },
-          select: { demoDayAt: true },
-        })
-      : null;
     return {
       isReadOnly: access.isReadOnly,
-      /** Demo day belongs to the learner's cohort, not to a project. */
-      demoDay: cohort?.demoDayAt ?? null,
       projects: projects.map(({ submissions, ...project }) => ({
         ...project,
         mySubmissions: submissions,

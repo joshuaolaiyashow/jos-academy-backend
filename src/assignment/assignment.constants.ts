@@ -3,18 +3,21 @@ export const ASSIGNMENT_RESPONSE_TYPES = [
   'Long response',
   'File upload',
   'Multiple choice',
+  'Coding exercise',
 ] as const;
 
 export type AssignmentResponseType = (typeof ASSIGNMENT_RESPONSE_TYPES)[number];
 
 export const MULTIPLE_CHOICE: AssignmentResponseType = 'Multiple choice';
 export const FILE_UPLOAD: AssignmentResponseType = 'File upload';
+export const CODING_EXERCISE: AssignmentResponseType = 'Coding exercise';
 
 /** Shown where a legacy assignment row has no title. */
 export const UNTITLED_ASSIGNMENT = 'Untitled assignment';
 
 export const MIN_CHOICE_OPTIONS = 2;
 export const ANSWER_TEXT_MAX_LENGTH = 10_000;
+export const STARTER_CODE_MAX_LENGTH = 10_000;
 export const SUBMISSION_NOTES_MAX_LENGTH = 5_000;
 export const FEEDBACK_MAX_LENGTH = 5_000;
 export const MAX_ASSIGNMENT_SCORE = 1_000;

@@ -83,19 +83,19 @@ export class LiveSessionController {
     return this.liveSessionService.getLiveSessions(courseId);
   }
 
-  @Get('course/:courseId/cohort')
+  @Get('course/:courseId/recordings')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary:
-      "Sessions for the caller's cohort, with recordings (every session for the owner)",
+      "A program's sessions with recordings (enrolled learners and the owner)",
   })
   @ApiParam({ name: 'courseId', description: 'Course ID (UUID)' })
-  async getCohortSessions(
+  async getProgramSessions(
     @Req() req: AuthenticatedRequest,
     @Param('courseId', ParseUUIDPipe) courseId: string,
   ) {
-    return this.liveSessionService.getCohortSessions(courseId, req.user);
+    return this.liveSessionService.getProgramSessions(courseId, req.user);
   }
 
   @Get('mine')

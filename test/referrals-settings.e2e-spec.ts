@@ -14,7 +14,6 @@ import {
   authHeader as auth,
   createE2eApp,
   seedCourse,
-  seedOpenCohort,
   seedUser,
   type SeededUser,
 } from './e2e-helpers';
@@ -152,11 +151,7 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
       const purchase = await http()
         .post('/enrollments/purchase')
         .set(header)
-        .send({
-          courseId: first.id,
-          type: 'FULL_COURSE',
-          cohortId: await seedOpenCohort(app, first.id),
-        })
+        .send({ courseId: first.id, type: 'FULL_COURSE' })
         .expect(201);
       expect(purchase.body).toMatchObject({
         originalCredits: 1000,
@@ -168,11 +163,7 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
       const again = await http()
         .post('/enrollments/purchase')
         .set(header)
-        .send({
-          courseId: second.id,
-          type: 'FULL_COURSE',
-          cohortId: await seedOpenCohort(app, second.id),
-        })
+        .send({ courseId: second.id, type: 'FULL_COURSE' })
         .expect(201);
       expect(again.body).toMatchObject({
         referralDiscountCredits: 0,

@@ -30,7 +30,6 @@ import { LessonNoteModule } from './lesson-note/lesson-note.module';
 import { DiscussionModule } from './discussion/discussion.module';
 import { AssignmentModule } from './assignment/assignment.module';
 import { CourseProjectModule } from './course-project/course-project.module';
-import { CohortModule } from './cohort/cohort.module';
 import { AuditModule } from './audit/audit.module';
 import { auditContextMiddleware } from './audit/audit-context';
 
@@ -65,7 +64,6 @@ import { auditContextMiddleware } from './audit/audit-context';
     DiscussionModule,
     AssignmentModule,
     CourseProjectModule,
-    CohortModule,
     AuditModule,
   ],
   controllers: [AppController],

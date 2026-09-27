@@ -1,9 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsDateString,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
@@ -39,4 +41,12 @@ export class CreateCourseProjectDto {
   @IsNotEmpty({ each: true })
   @MaxLength(200, { each: true })
   milestones: string[];
+
+  @ApiPropertyOptional({
+    example: '2026-12-18T15:00:00.000Z',
+    description: 'When learners present the finished project',
+  })
+  @IsOptional()
+  @IsDateString()
+  demoDay?: string;
 }

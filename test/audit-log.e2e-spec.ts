@@ -4,11 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 
 import { AUDIT_ACTIONS } from '../src/audit/audit-actions';
-import {
-  CohortStatus,
-  CourseStatus,
-  UserRole,
-} from '../src/generated/prisma/client';
+import { CourseStatus, UserRole } from '../src/generated/prisma/client';
 import { NotificationService } from '../src/notification/notification.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
@@ -37,27 +33,6 @@ describe('Audit log (e2e)', () => {
   let creator: SeededUser;
 
   const http = () => request(app.getHttpServer());
-
-  const seedPendingCohort = async (): Promise<string> => {
-    const { id: courseId } = await seedCourse(
-      app,
-      creator.id,
-      1,
-      CourseStatus.DRAFT,
-    );
-    const cohort = await prisma.cohort.create({
-      data: {
-        courseId,
-        name: 'Audit cohort',
-        startsAt: new Date(Date.now() + 14 * 86_400_000),
-        enrollmentClosesAt: new Date(Date.now() + 21 * 86_400_000),
-        endsAt: new Date(Date.now() + 60 * 86_400_000),
-        seatCap: 30,
-        status: CohortStatus.PENDING_REVIEW,
-      },
-    });
-    return cohort.id;
-  };
 
   const latestEntry = (action: string, targetId: string) =>
     prisma.auditLog.findFirstOrThrow({
@@ -128,32 +103,37 @@ describe('Audit log (e2e)', () => {
     });
   });
 
-  describe('cohort review', () => {
-    it('records who requested changes on a cohort and why', async () => {
-      const cohortId = await seedPendingCohort();
+  describe('program review', () => {
+    it('records who rejected a program and why', async () => {
+      const { id: courseId } = await seedCourse(
+        app,
+        creator.id,
+        1,
+        CourseStatus.PENDING_REVIEW,
+      );
       await http()
-        .patch(`/admin/cohorts/${cohortId}/start-review`)
+        .patch(`/admin/programs/${courseId}/start-review`)
         .set(auth(admin))
         .expect(200);
       await http()
-        .patch(`/admin/cohorts/${cohortId}/review`)
+        .patch(`/admin/programs/${courseId}/review`)
         .set(auth(admin))
-        .send({ approved: false, reason: 'Audio is muffled' })
+        .send({ status: 'REJECTED', reason: 'Audio is muffled' })
         .expect(200);
 
       const actions = await prisma.auditLog.findMany({
-        where: { targetId: cohortId },
+        where: { targetId: courseId },
         orderBy: { createdAt: 'asc' },
         select: { action: true, actorId: true, metadata: true },
       });
       expect(actions).toEqual([
         {
-          action: AUDIT_ACTIONS.COHORT_REVIEW_STARTED,
+          action: AUDIT_ACTIONS.COURSE_REVIEW_STARTED,
           actorId: admin.id,
           metadata: null,
         },
         {
-          action: AUDIT_ACTIONS.COHORT_CHANGES_REQUESTED,
+          action: AUDIT_ACTIONS.COURSE_REJECTED,
           actorId: admin.id,
           metadata: { reason: 'Audio is muffled', attachmentsCount: 0 },
         },
@@ -167,15 +147,20 @@ describe('Audit log (e2e)', () => {
     });
 
     it('filters by target and names the actor', async () => {
-      const cohortId = await seedPendingCohort();
+      const { id: courseId } = await seedCourse(
+        app,
+        creator.id,
+        1,
+        CourseStatus.PENDING_REVIEW,
+      );
       await http()
-        .patch(`/admin/cohorts/${cohortId}/start-review`)
+        .patch(`/admin/programs/${courseId}/start-review`)
         .set(auth(admin))
         .expect(200);
 
       const response = await http()
         .get('/admin/audit-logs')
-        .query({ targetType: 'cohort', targetId: cohortId })
+        .query({ targetType: 'course', targetId: courseId })
         .set(auth(admin))
         .expect(200);
       const body = response.body as {
@@ -184,7 +169,7 @@ describe('Audit log (e2e)', () => {
       };
       expect(body.total).toBe(1);
       expect(body.entries[0]).toMatchObject({
-        action: AUDIT_ACTIONS.COHORT_REVIEW_STARTED,
+        action: AUDIT_ACTIONS.COURSE_REVIEW_STARTED,
         actorId: admin.id,
         actorName: 'audit-admin User',
       });

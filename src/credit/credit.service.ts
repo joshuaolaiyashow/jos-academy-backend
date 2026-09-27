@@ -22,6 +22,9 @@ import { randomBytes } from 'crypto';
 // Conversion rate constant: 10 credits = 100 Naira (1 credit = 10 Naira)
 export const NAIRA_PER_CREDIT = 10;
 
+// Program pricing: tuition is set in USD and converted at 100 credits = $10.
+export const CREDITS_PER_USD = 10;
+
 @Injectable()
 export class CreditService {
   private readonly logger = new Logger(CreditService.name);

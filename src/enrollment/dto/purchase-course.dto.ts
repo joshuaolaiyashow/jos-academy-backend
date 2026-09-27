@@ -1,11 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsEnum,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { EnrollmentType } from '../../generated/prisma/client';
 
 export class PurchaseCourseDto {
@@ -36,14 +30,6 @@ export class PurchaseCourseDto {
   @IsOptional()
   @IsString({ message: 'moduleId must be a string' })
   moduleId?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'The cohort to join. Required for a first purchase; later purchases stay in the same cohort.',
-  })
-  @IsOptional()
-  @IsUUID()
-  cohortId?: string;
 
   @ApiPropertyOptional({
     example: 'LAUNCH20',

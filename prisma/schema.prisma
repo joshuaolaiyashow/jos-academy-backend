@@ -133,11 +133,19 @@ model Course {
   reviews            Review[]
   certificates       Certificate[]
   projects           CourseProject[]
-  cohorts            Cohort[]
 
   // Defaults to ACTIVE so pre-existing courses stay live; new courses are
   // created as DRAFT in CourseService.createCourse.
   status               CourseStatus @default(ACTIVE)
+  rejectionReason      String?
+  /// Optional screenshots an admin attached when requesting changes; cleared on approve/resubmit.
+  rejectionAttachments String[]     @default([])
+
+  /// Each program is one cohort: it runs from startsAt to endsAt. New seats (capped by
+  /// maxCohortSize) are sold until enrollmentClosesAt, then again with no cap once it ends, as a rewatch.
+  startsAt           DateTime?
+  enrollmentClosesAt DateTime?
+  endsAt             DateTime?
 
   @@index([id])
   @@index([categoryId])
@@ -159,7 +167,6 @@ model Modules {
   creditTransactions CreditTransaction[]
   lessons            Lesson[]
   liveSessions       LiveSession[]
-  cohortSchedules    CohortModule[]
 
   @@index([courseId])
 }
@@ -171,6 +178,8 @@ model Lesson {
   contentType LessonContentType
   videoUrl    String?
   content     String?
+  // Only set for code lessons; drives the editor's highlighting and formatter.
+  codeLanguage String?
   duration    Int?
   order       Int               @default(0)
 
@@ -220,8 +229,6 @@ model LiveSession {
   course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   moduleId  String?
   module    Modules? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
-  cohortId  String?
-  cohort    Cohort?  @relation(fields: [cohortId], references: [id], onDelete: Cascade)
   creatorId String
   creator   User     @relation("CreatorSessions", fields: [creatorId], references: [id], onDelete: Cascade)
 
@@ -231,7 +238,6 @@ model LiveSession {
   updatedAt DateTime @updatedAt
 
   @@index([courseId])
-  @@index([cohortId])
   @@index([creatorId])
 }
 
@@ -324,6 +330,7 @@ model CourseProject {
   description String              @db.Text
   /// Ordered milestone labels; learners submit them in order.
   milestones  String[]
+  demoDay     DateTime?
   status      CourseProjectStatus @default(ACTIVE)
 
   submissions ProjectMilestoneSubmission[]
@@ -351,14 +358,11 @@ model ProjectMilestoneSubmission {
 }
 
 model Enrollment {
-  id       String  @id @default(uuid())
+  id       String @id @default(uuid())
   userId   String
-  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   courseId String
-  course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  /// The learner's seat. One per program; moving cohorts updates this. Required once checkout picks a cohort.
-  cohortId String?
-  cohort   Cohort? @relation(fields: [cohortId], references: [id], onDelete: Restrict)
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   type   EnrollmentType   @default(FULL_COURSE)
   status EnrollmentStatus @default(PENDING)
@@ -372,7 +376,6 @@ model Enrollment {
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
-  @@index([cohortId])
 }
 
 model EnrolledModule {
@@ -458,62 +461,6 @@ model CreditTransaction {
   @@index([userId])
   @@index([courseId])
   @@index([reference])
-}
-
-enum CohortStatus {
-  /// Being scheduled; invisible to learners.
-  DRAFT
-  /// Submitted at least COHORT_REVIEW_LEAD_DAYS before it starts.
-  PENDING_REVIEW
-  /// An admin picked it up; the creator can't edit until the review ends.
-  IN_REVIEW
-  /// Sent back with a reason; the creator edits and resubmits.
-  CHANGES_REQUESTED
-  /// Visible and sellable. Open, running or finished follows from its dates.
-  APPROVED
-  CANCELLED
-}
-
-/// One run of a program: learners in it share module dates, live sessions and demo day.
-model Cohort {
-  id                 String       @id @default(uuid())
-  courseId           String
-  course             Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  name               String
-  startsAt           DateTime
-  /// No new seats after this until the cohort ends; then it sells as a rewatch.
-  enrollmentClosesAt DateTime
-  endsAt             DateTime
-  seatCap            Int
-  demoDayAt          DateTime?
-  status             CohortStatus @default(DRAFT)
-  submittedAt        DateTime?
-  /// Why the admin requested changes; cleared on resubmit and approval.
-  reviewNote         String?
-  reviewAttachments  String[]     @default([])
-
-  modules      CohortModule[]
-  enrollments  Enrollment[]
-  liveSessions LiveSession[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([courseId, startsAt])
-  @@index([status])
-}
-
-/// When a module starts for one cohort.
-model CohortModule {
-  id       String   @id @default(uuid())
-  cohortId String
-  cohort   Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
-  moduleId String
-  module   Modules  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  startsAt DateTime
-
-  @@unique([cohortId, moduleId])
-  @@index([moduleId])
 }
 
 enum CourseStatus {

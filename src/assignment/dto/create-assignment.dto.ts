@@ -20,8 +20,10 @@ import {
   ASSIGNMENT_RESPONSE_TYPES,
   MAX_ASSIGNMENT_QUESTIONS,
   MAX_ASSIGNMENT_SCORE,
+  STARTER_CODE_MAX_LENGTH,
 } from '../assignment.constants';
 import type { AssignmentResponseType } from '../assignment.constants';
+import { CODE_LANGUAGES, type CodeLanguage } from '../../common/code-languages';
 
 export class AssignmentQuestionDto {
   @ApiProperty({
@@ -59,6 +61,22 @@ export class AssignmentQuestionDto {
   @IsString({ each: true })
   @MaxLength(500, { each: true })
   options?: string[];
+
+  @ApiPropertyOptional({
+    enum: CODE_LANGUAGES,
+    description: 'Required for Coding exercise',
+  })
+  @IsOptional()
+  @IsIn(CODE_LANGUAGES)
+  codeLanguage?: CodeLanguage;
+
+  @ApiPropertyOptional({
+    description: 'Code the learner starts from (Coding exercise only)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(STARTER_CODE_MAX_LENGTH)
+  starterCode?: string;
 }
 
 export class CreateAssignmentDto {

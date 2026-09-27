@@ -16,16 +16,15 @@ import {
   EnrollmentStatus,
   EnrollmentType,
   CourseStatus,
-  CohortStatus,
 } from '../generated/prisma/client';
 import { randomBytes } from 'crypto';
-import { NAIRA_PER_CREDIT } from '../credit/credit.service';
+import { CREDITS_PER_USD, NAIRA_PER_CREDIT } from '../credit/credit.service';
 import { MODULE_ORDER_BY } from '../course-module/module-order';
 import {
   ENROLLMENT_ACCESS_STATUSES,
   hasEnrollmentAccess,
 } from './enrollment-access';
-import { cohortSalesPhase } from '../cohort/cohort-phase';
+import { programSalesPhase } from '../course/program-schedule';
 import { formatDateOnly } from '../utils';
 
 @Injectable()
@@ -42,12 +41,8 @@ export class EnrollmentService {
   /**
    * Calculate course and module credit requirements
    */
-  calculateCourseCredits(tuitionFee: number, costCredit?: number | null) {
-    const courseCredits =
-      costCredit && costCredit > 0
-        ? costCredit
-        : Math.ceil(tuitionFee / NAIRA_PER_CREDIT);
-    return courseCredits;
+  calculateCourseCredits(tuitionFee: number): number {
+    return Math.ceil(tuitionFee * CREDITS_PER_USD);
   }
 
   /**
@@ -89,10 +84,7 @@ export class EnrollmentService {
     }
 
     // 3. Compute credit costs
-    const courseTotalCredits = this.calculateCourseCredits(
-      course.tuitionFee,
-      course.costCredit,
-    );
+    const courseTotalCredits = this.calculateCourseCredits(course.tuitionFee);
     const moduleCredits = Math.ceil(courseTotalCredits / totalModules);
 
     // 4. Check existing enrollment
@@ -115,9 +107,11 @@ export class EnrollmentService {
       );
     }
 
-    const seat = await this.resolveCohortSeat(
-      existingEnrollment?.cohortId ?? null,
-      dto,
+    const seat = this.resolveSeat(
+      course,
+      Boolean(
+        existingEnrollment && hasEnrollmentAccess(existingEnrollment.status),
+      ),
       now,
     );
 
@@ -202,8 +196,8 @@ export class EnrollmentService {
 
     if (seat.isNew && seat.phase === 'OPEN') {
       // Checked again under a row lock inside the transaction; this early check
-      // just saves a round of discount and balance work for a full cohort.
-      await this.assertSeatAvailable(this.prisma, seat.cohortId, seat.seatCap);
+      // just saves a round of discount and balance work for a full program.
+      await this.assertSeatAvailable(this.prisma, courseId, seat.seatCap);
     }
 
     const txReference = `JOS-PUR-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
@@ -211,9 +205,9 @@ export class EnrollmentService {
     // 6. Execute atomic deduction, transaction log, and enrollment activation
     const result = await this.prisma.$transaction(async (tx) => {
       if (seat.isNew && seat.phase === 'OPEN') {
-        // Lock the cohort row so two buyers can't both take the last seat.
-        await tx.$queryRaw`SELECT id FROM "Cohort" WHERE id = ${seat.cohortId} FOR UPDATE`;
-        await this.assertSeatAvailable(tx, seat.cohortId, seat.seatCap);
+        // Lock the program row so two buyers can't both take the last seat.
+        await tx.$queryRaw`SELECT id FROM "Course" WHERE id = ${courseId} FOR UPDATE`;
+        await this.assertSeatAvailable(tx, courseId, seat.seatCap);
       }
 
       // Re-check the code inside the transaction so concurrent purchases
@@ -278,12 +272,10 @@ export class EnrollmentService {
         create: {
           userId,
           courseId,
-          cohortId: seat.cohortId,
           type,
           status: EnrollmentStatus.ACTIVE,
         },
         update: {
-          cohortId: seat.cohortId,
           status: EnrollmentStatus.ACTIVE,
           ...(type === EnrollmentType.FULL_COURSE
             ? { type: EnrollmentType.FULL_COURSE }
@@ -366,76 +358,43 @@ export class EnrollmentService {
       remainingNairaEquivalent: result.user.credits * NAIRA_PER_CREDIT,
       reference: txReference,
       enrollmentId: result.enrollment.id,
-      cohortId: seat.cohortId,
     };
   }
 
   /**
-   * Which cohort this purchase lands in. A learner keeps one seat per program:
-   * the first purchase picks a cohort, later ones stay in it. New seats are sold
-   * while a cohort is open and again (uncapped) once it has ended, as a rewatch.
-   * A learner who already has a seat can add a module until it starts.
+   * A program is one cohort. New seats (capped by maxCohortSize) are sold until
+   * enrollment closes, then again with no cap once it ends, as a rewatch. Learners
+   * who already have a seat can buy their remaining modules at any time.
    */
-  private async resolveCohortSeat(
-    seatCohortId: string | null,
-    dto: PurchaseCourseDto,
+  private resolveSeat(
+    course: {
+      maxCohortSize: number;
+      enrollmentClosesAt: Date | null;
+      endsAt: Date | null;
+    },
+    hasSeat: boolean,
     now: Date,
   ) {
-    if (seatCohortId && dto.cohortId && dto.cohortId !== seatCohortId) {
-      throw new ConflictException(
-        'You already have a seat in another cohort of this program. Contact support to switch.',
+    const phase = programSalesPhase(course, now);
+    const isNew = !hasSeat;
+    if (isNew && phase === 'CLOSED' && course.endsAt) {
+      throw new BadRequestException(
+        `Enrollment for this program has closed. It reopens as a rewatch on ${formatDateOnly(course.endsAt)}.`,
       );
     }
-    const cohortId = seatCohortId ?? dto.cohortId;
-    if (!cohortId) {
-      throw new BadRequestException('Pick a cohort to join.');
-    }
-    const cohort = await this.prisma.cohort.findFirst({
-      where: {
-        id: cohortId,
-        courseId: dto.courseId,
-        status: CohortStatus.APPROVED,
-      },
-      include: { modules: { select: { moduleId: true, startsAt: true } } },
-    });
-    if (!cohort) {
-      throw new BadRequestException('That cohort is not open for enrollment.');
-    }
-
-    const phase = cohortSalesPhase(cohort, now);
-    const isNew = !seatCohortId;
-    if (phase === 'CLOSED') {
-      if (isNew) {
-        throw new BadRequestException(
-          `Enrollment for ${cohort.name} has closed. It reopens as a rewatch on ${formatDateOnly(cohort.endsAt)}.`,
-        );
-      }
-      const moduleStart = cohort.modules.find(
-        (entry) => entry.moduleId === dto.moduleId,
-      )?.startsAt;
-      if (
-        dto.type === EnrollmentType.MODULAR &&
-        moduleStart &&
-        moduleStart <= now
-      ) {
-        throw new BadRequestException(
-          'This module has already started for your cohort. You can buy it once the cohort ends.',
-        );
-      }
-    }
-    return { cohortId, phase, isNew, seatCap: cohort.seatCap };
+    return { phase, isNew, seatCap: course.maxCohortSize };
   }
 
   private async assertSeatAvailable(
     db: Pick<PrismaService, 'enrollment'>,
-    cohortId: string,
+    courseId: string,
     seatCap: number,
   ): Promise<void> {
     const taken = await db.enrollment.count({
-      where: { cohortId, status: { in: ENROLLMENT_ACCESS_STATUSES } },
+      where: { courseId, status: { in: ENROLLMENT_ACCESS_STATUSES } },
     });
     if (taken >= seatCap) {
-      throw new ConflictException('This cohort is full.');
+      throw new ConflictException('This program is full.');
     }
   }
 
@@ -478,7 +437,6 @@ export class EnrollmentService {
           return {
             id: enr.id,
             courseId: enr.courseId,
-            cohortId: enr.cohortId,
             courseName: enr.course.name,
             heroImage: enr.course.heroImageName,
             category: enr.course.category?.name || null,

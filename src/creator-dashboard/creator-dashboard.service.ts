@@ -9,7 +9,6 @@ import { LiveSessionService } from '../live-session/live-session.service';
 import { NotificationService } from '../notification/notification.service';
 import { LiveSessionStatus } from '../generated/prisma/client';
 import { MODULE_ORDER_BY } from '../course-module/module-order';
-import { contentLockingCohortsWhere } from '../cohort/cohort-phase';
 
 @Injectable()
 export class CreatorDashboardService {
@@ -100,25 +99,9 @@ export class CreatorDashboardService {
       },
     });
 
-    // Tells the dashboard which programs a cohort is freezing, and why.
-    const lockingCohorts = await this.prisma.cohort.findMany({
-      where: contentLockingCohortsWhere({ in: courseIds }, new Date()),
-      select: { courseId: true, status: true, name: true, endsAt: true },
-      orderBy: { endsAt: 'desc' },
-    });
-    const lockByCourse = new Map(
-      lockingCohorts.map(({ courseId, name, ...lock }) => [
-        courseId,
-        { ...lock, cohortName: name },
-      ]),
-    );
-
     return {
       total: courses.length,
-      programs: courses.map((course) => ({
-        ...course,
-        contentLock: lockByCourse.get(course.id) ?? null,
-      })),
+      programs: courses,
     };
   }
 

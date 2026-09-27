@@ -427,7 +427,7 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
         .expect(403);
     });
 
-    it('creates a project', async () => {
+    it('creates a project with its demo day', async () => {
       const created = await http()
         .post('/projects')
         .set(auth(creator))
@@ -436,9 +436,11 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
           title: 'Line-following robot',
           description: 'Build a robot that follows a line.',
           milestones: ['Design doc', 'Prototype', 'Final build'],
+          demoDay: inDays(31),
         })
         .expect(201);
       projectId = created.body.id;
+      expect(created.body.demoDay).toEqual(expect.any(String));
     });
 
     it('makes learners submit milestones in order with https links', async () => {
@@ -451,8 +453,7 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
         milestones: ['Design doc', 'Prototype', 'Final build'],
         mySubmissions: [],
       });
-      // Demo day comes from the learner's cohort; this learner joined before cohorts.
-      expect(list.body.demoDay).toBeNull();
+      expect(list.body.projects[0].demoDay).toEqual(expect.any(String));
 
       await http()
         .post(`/projects/${projectId}/milestones/1`)

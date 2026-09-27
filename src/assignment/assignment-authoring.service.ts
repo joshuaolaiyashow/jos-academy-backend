@@ -11,7 +11,11 @@ import {
   type CourseActor,
 } from '../course-access/course-access.service';
 import { ENROLLMENT_ACCESS_STATUSES } from '../enrollment/enrollment-access';
-import { MIN_CHOICE_OPTIONS, MULTIPLE_CHOICE } from './assignment.constants';
+import {
+  CODING_EXERCISE,
+  MIN_CHOICE_OPTIONS,
+  MULTIPLE_CHOICE,
+} from './assignment.constants';
 import type { AssignmentStatus, StoredQuestion } from './assignment.types';
 import {
   AssignmentQuestionDto,
@@ -42,12 +46,21 @@ const toStoredQuestions = (
         `"${question.question}" needs at least ${MIN_CHOICE_OPTIONS} different options.`,
       );
     }
+    const isCoding = question.responseType === CODING_EXERCISE;
+    if (isCoding && !question.codeLanguage) {
+      throw new BadRequestException(
+        `Pick a language for the coding exercise "${question.question}".`,
+      );
+    }
     return {
       id: question.id,
       question: question.question.trim(),
       responseType: question.responseType,
       description: question.description?.trim() || undefined,
       options: question.responseType === MULTIPLE_CHOICE ? options : undefined,
+      codeLanguage: isCoding ? question.codeLanguage : undefined,
+      // Starter code keeps its whitespace; indentation is part of the code.
+      starterCode: isCoding ? question.starterCode || undefined : undefined,
     };
   });
 };
@@ -84,10 +97,7 @@ export class AssignmentAuthoringService {
     assignmentId: string,
   ) {
     const assignment = await this.findOwnedAssignment(user, assignmentId);
-    await this.courseAccess.assertCourseEditable(
-      user,
-      assignment.module.course,
-    );
+    this.courseAccess.assertCourseEditable(user, assignment.module.course);
     return assignment;
   }
 

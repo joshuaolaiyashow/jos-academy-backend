@@ -412,6 +412,55 @@ export class NotificationService {
     );
   }
 
+  /** Tells a creator the outcome of an admin's review of their program. */
+  async sendCourseReviewEmail({
+    email,
+    name,
+    courseName,
+    approved,
+    reason,
+    attachmentUrls,
+  }: CourseReviewEmailOptions): Promise<void> {
+    const dashboardUrl = `${process.env.APP_URL || 'http://localhost:3000'}/creator-dashboard?tab=programs`;
+    const screenshots = (attachmentUrls ?? [])
+      .map(
+        (url, index) =>
+          `<li><a href="${escapeHtml(url)}" style="color: #4f46e5;">Screenshot ${index + 1}</a></li>`,
+      )
+      .join('');
+
+    await this.sendEmailQuietly({
+      to: email,
+      subject: approved
+        ? `${courseName} is approved and live`
+        : `${courseName} needs changes`,
+      html: this.renderEmailLayout(
+        approved
+          ? `${courseName} passed review and is now open for enrollment.`
+          : `${courseName} needs a few changes before it can go live.`,
+        `
+          <h1 style="color: #18181b; font-size: 20px; font-weight: 800; margin: 0 0 12px;">
+            ${approved ? 'Your program is live' : 'Your program needs changes'}
+          </h1>
+          <p style="color: #52525b; font-size: 15px; line-height: 1.6; margin: 0;">
+            Hi ${escapeHtml(name)}, ${
+              approved
+                ? `<strong>${escapeHtml(courseName)}</strong> passed review and is now open for enrollment.`
+                : `an admin reviewed <strong>${escapeHtml(courseName)}</strong> and asked for changes before it can go live.`
+            }
+          </p>
+          ${
+            !approved && reason
+              ? `<p style="color: #18181b; font-size: 15px; line-height: 1.6; margin: 16px 0 0; padding: 12px 16px; background: #fef2f2; border-radius: 12px;">${escapeHtml(reason)}</p>`
+              : ''
+          }
+          ${!approved && screenshots ? `<ul style="margin: 12px 0 0; padding-left: 20px;">${screenshots}</ul>` : ''}
+          ${this.emailButton(dashboardUrl, 'Open your programs')}
+        `,
+      ),
+    });
+  }
+
   /**
    * One page of a user's notifications, newest first, optionally unread only.
    * `unreadCount` is across all pages so a badge never reflects just one page.

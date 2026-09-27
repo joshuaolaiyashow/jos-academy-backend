@@ -13,12 +13,21 @@ import { BadgesService } from '../badges/badges.service';
 import { CertificateService } from '../certificate/certificate.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { UserRole } from '../generated/prisma/client';
+import { LessonContentType, UserRole } from '../generated/prisma/client';
+import { sanitizeNoteHtml } from './lesson-note-html';
 import {
   CourseAccessService,
   type CourseActor,
 } from '../course-access/course-access.service';
 import { assertRoomForLesson } from '../course-module/lesson-plan';
+
+const cleanContent = (
+  contentType: LessonContentType,
+  content: string | undefined,
+): string | undefined =>
+  content !== undefined && contentType === LessonContentType.note
+    ? sanitizeNoteHtml(content)
+    : content;
 
 @Injectable()
 export class LessonService {
@@ -79,7 +88,7 @@ export class LessonService {
     );
 
     const lesson = await this.prisma.lesson.create({
-      data: { ...dto },
+      data: { ...dto, content: cleanContent(dto.contentType, dto.content) },
     });
 
     this.logger.log(
@@ -119,7 +128,13 @@ export class LessonService {
 
     const updated = await this.prisma.lesson.update({
       where: { id },
-      data: { ...dto },
+      data: {
+        ...dto,
+        content: cleanContent(
+          dto.contentType ?? lesson.contentType,
+          dto.content,
+        ),
+      },
     });
 
     this.logger.log(`✏️ Lesson updated: ${updated.title} (ID: ${updated.id})`);

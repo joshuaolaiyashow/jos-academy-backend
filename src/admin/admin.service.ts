@@ -24,6 +24,7 @@ import { ENROLLMENT_ACCESS_STATUSES } from '../enrollment/enrollment-access';
 import { NAIRA_PER_CREDIT } from '../credit/credit.service';
 import { pageMeta, toPrismaPage } from '../utils/pagination';
 import { AdminUserStatus } from './dto/update-user-status.dto';
+import { CourseReviewDecision } from './dto/review-course.dto';
 import { ListProgramsQueryDto } from './dto/list-programs-query.dto';
 import { MODULE_ORDER_BY } from '../course-module/module-order';
 import { NOTIFICATION_LINKS } from '../notification/notification-links';
@@ -603,6 +604,188 @@ export class AdminService {
     );
 
     return { ratingsByCourseId, revenueByCourseId };
+  }
+
+  /** Everything the full-page review shows: the schedule and the whole program. */
+  async getProgramForReview(id: string) {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        shortDescription: true,
+        fullDescription: true,
+        tuitionFee: true,
+        maxCohortSize: true,
+        startsAt: true,
+        enrollmentClosesAt: true,
+        endsAt: true,
+        rejectionReason: true,
+        creator: { select: { id: true, name: true, email: true } },
+        modules: {
+          orderBy: MODULE_ORDER_BY,
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            lessons: {
+              orderBy: { order: 'asc' },
+              select: {
+                id: true,
+                title: true,
+                contentType: true,
+                duration: true,
+              },
+            },
+            assignments: {
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                questions: true,
+                maxScore: true,
+                publishedAt: true,
+              },
+            },
+          },
+        },
+        projects: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            milestones: true,
+            demoDay: true,
+          },
+        },
+      },
+    });
+    if (!course) {
+      throw new NotFoundException(`Program with ID "${id}" not found`);
+    }
+    return course;
+  }
+
+  /**
+   * Moves a PENDING_REVIEW course to IN_REVIEW, which locks the creator out of
+   * editing until the review ends. The status guard in the update makes two
+   * admins clicking at once safe: only one transition succeeds.
+   */
+  async startReview(id: string) {
+    const { count } = await this.prisma.course.updateMany({
+      where: { id, status: CourseStatus.PENDING_REVIEW },
+      data: { status: CourseStatus.IN_REVIEW },
+    });
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      select: { id: true, name: true, status: true, creatorId: true },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID "${id}" not found`);
+    }
+    if (count === 0) {
+      throw new BadRequestException(
+        'Only courses pending review can be moved into review',
+      );
+    }
+
+    if (course.creatorId) {
+      await this.notificationService.createNotification(
+        course.creatorId,
+        course.name,
+        'An admin started reviewing your course. Editing is paused until the review is finished.',
+        'program-review',
+        NOTIFICATION_LINKS.creatorPrograms(),
+      );
+    }
+
+    await this.audit.record({
+      action: AUDIT_ACTIONS.COURSE_REVIEW_STARTED,
+      targetType: AUDIT_TARGETS.COURSE,
+      targetId: id,
+    });
+    this.logger.log(`📚 Course ${id} moved into review by admin`);
+    return { id: course.id, status: course.status };
+  }
+
+  /**
+   * Approves (goes live) or rejects an IN_REVIEW course, then tells its creator in-app
+   * (pushed live) and by email. Screenshots are kept only on reject.
+   */
+  async reviewCourse(
+    id: string,
+    decision: CourseReviewDecision,
+    reason?: string,
+    attachmentUrls: string[] = [],
+  ) {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      include: { creator: { select: { email: true, name: true } } },
+    });
+    if (!course) {
+      throw new NotFoundException(`Course with ID "${id}" not found`);
+    }
+    if (course.status !== CourseStatus.IN_REVIEW) {
+      throw new BadRequestException(
+        'Start the review before approving or rejecting this course',
+      );
+    }
+
+    const approved = decision === 'ACTIVE';
+    const updated = await this.prisma.course.update({
+      where: { id },
+      data: {
+        status: approved ? CourseStatus.ACTIVE : CourseStatus.REJECTED,
+        rejectionReason: approved ? null : (reason ?? null),
+        rejectionAttachments: approved ? [] : attachmentUrls,
+      },
+    });
+
+    if (course.creatorId) {
+      await this.notificationService.createNotification(
+        course.creatorId,
+        course.name,
+        approved
+          ? 'Your course was approved and is now live.'
+          : `Your course needs changes before it can go live${reason ? `: ${reason}` : '.'}`,
+        'program-review',
+        NOTIFICATION_LINKS.creatorPrograms(),
+      );
+    }
+    if (course.creator) {
+      await this.notificationService.sendCourseReviewEmail({
+        email: course.creator.email,
+        name: course.creator.name,
+        courseName: course.name,
+        approved,
+        reason,
+        attachmentUrls: updated.rejectionAttachments,
+      });
+    }
+
+    await this.audit.record({
+      action: approved
+        ? AUDIT_ACTIONS.COURSE_APPROVED
+        : AUDIT_ACTIONS.COURSE_REJECTED,
+      targetType: AUDIT_TARGETS.COURSE,
+      targetId: id,
+      metadata: approved
+        ? {}
+        : {
+            reason: reason ?? null,
+            attachmentsCount: updated.rejectionAttachments.length,
+          },
+    });
+    this.logger.log(
+      `📚 Course ${id} ${approved ? 'approved' : 'rejected'} by admin`,
+    );
+    return {
+      id: updated.id,
+      status: updated.status,
+      rejectionReason: updated.rejectionReason,
+      rejectionAttachments: updated.rejectionAttachments,
+    };
   }
 
   /**

@@ -15,6 +15,7 @@ import {
 } from '../course-access/course-access.service';
 import {
   ALLOWED_ANSWER_FILE_TYPES,
+  CODING_EXERCISE,
   FILE_UPLOAD,
   MULTIPLE_CHOICE,
   submissionFilePrefix,
@@ -76,7 +77,11 @@ const validateAnswers = (
     }
     const text = answer.text?.trim();
     if (!text) throw missing;
-    return { questionId: question.id, text };
+    // Code keeps its leading indentation (it matters in Python); prose is trimmed.
+    return {
+      questionId: question.id,
+      text: question.responseType === CODING_EXERCISE ? answer.text : text,
+    };
   });
 };
 

@@ -13,7 +13,6 @@ import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 import { UpdateLiveSessionDto } from './dto/update-live-session.dto';
 import {
   AttendanceStatus,
-  CohortStatus,
   LiveSessionStatus,
   UserRole,
 } from '../generated/prisma/client';
@@ -56,7 +55,7 @@ export class LiveSessionService {
    * Create a new live session, validating course/module ownership
    */
   async createLiveSession(creator: SessionActor, dto: CreateLiveSessionDto) {
-    const { courseId, moduleId, cohortId, ...sessionData } = dto;
+    const { courseId, moduleId, ...sessionData } = dto;
     const creatorId = creator.id;
 
     // Sessions are how a cohort is taught, so they're allowed in any program status;
@@ -74,15 +73,12 @@ export class LiveSessionService {
       }
     }
 
-    await this.assertCohortForSession(courseId, cohortId);
-
     const session = await this.prisma.liveSession.create({
       data: {
         ...sessionData,
         scheduledAt: new Date(sessionData.scheduledAt),
         courseId,
         moduleId: moduleId || undefined,
-        cohortId,
         creatorId,
       },
       include: {
@@ -96,11 +92,7 @@ export class LiveSessionService {
     );
 
     const learners = await this.prisma.enrollment.findMany({
-      where: {
-        courseId,
-        status: { in: ENROLLMENT_ACCESS_STATUSES },
-        ...(cohortId ? { cohortId } : {}),
-      },
+      where: { courseId, status: { in: ENROLLMENT_ACCESS_STATUSES } },
       select: { userId: true },
     });
     await this.notifications.sendLiveSessionScheduledEmails({
@@ -135,15 +127,11 @@ export class LiveSessionService {
     };
   }
 
-  /**
-   * The caller's own cohort's sessions, with recordings. Owners and admins see
-   * every session of the program.
-   */
-  async getCohortSessions(courseId: string, user: SessionActor) {
+  /** A program's sessions with their recordings, for its learners (including rewatch buyers) and owner. */
+  async getProgramSessions(courseId: string, user: SessionActor) {
     await this.courseAccess.assertCourseMember(user, courseId);
-    const cohortId = await this.courseAccess.learnerCohortId(user, courseId);
     const sessions = await this.prisma.liveSession.findMany({
-      where: { courseId, ...(cohortId ? { cohortId } : {}) },
+      where: { courseId },
       omit: { meetingLink: true },
       include: this.sessionListSelect,
       orderBy: { scheduledAt: 'asc' },
@@ -154,31 +142,6 @@ export class LiveSessionService {
         this.mapSessionWithAttendeeCount(session),
       ),
     };
-  }
-
-  /** Once a program has cohorts, every session must belong to one of them. */
-  private async assertCohortForSession(
-    courseId: string,
-    cohortId: string | undefined,
-  ): Promise<void> {
-    if (cohortId) {
-      const cohort = await this.prisma.cohort.findFirst({
-        where: { id: cohortId, courseId },
-        select: { id: true },
-      });
-      if (!cohort) {
-        throw new BadRequestException(
-          "Pick one of this program's cohorts for the session.",
-        );
-      }
-      return;
-    }
-    const hasCohorts = await this.prisma.cohort.count({
-      where: { courseId, status: { not: CohortStatus.CANCELLED } },
-    });
-    if (hasCohorts > 0) {
-      throw new BadRequestException('Pick the cohort this session is for.');
-    }
   }
 
   /**
@@ -251,11 +214,7 @@ export class LiveSessionService {
    */
   async joinSession(sessionId: string, user: SessionActor) {
     const session = await this.findSessionOrThrow(sessionId);
-    await this.courseAccess.assertCohortMember(
-      user,
-      session.courseId,
-      session.cohortId,
-    );
+    await this.courseAccess.assertCourseMember(user, session.courseId);
 
     if (session.status !== LiveSessionStatus.LIVE) {
       throw new ConflictException(
@@ -350,11 +309,7 @@ export class LiveSessionService {
    */
   async registerForSession(sessionId: string, user: SessionActor) {
     const session = await this.findSessionOrThrow(sessionId);
-    await this.courseAccess.assertCohortMember(
-      user,
-      session.courseId,
-      session.cohortId,
-    );
+    await this.courseAccess.assertCourseMember(user, session.courseId);
     const userId = user.id;
 
     const attendance = await this.prisma.sessionAttendance.upsert({

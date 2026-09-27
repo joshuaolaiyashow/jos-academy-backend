@@ -6,7 +6,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
   IsUrl,
   MaxLength,
   Min,
@@ -91,12 +90,4 @@ export class CreateLiveSessionDto {
   @IsOptional()
   @IsString()
   moduleId?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'The cohort this session is for. Required once the program has cohorts.',
-  })
-  @IsOptional()
-  @IsUUID()
-  cohortId?: string;
 }

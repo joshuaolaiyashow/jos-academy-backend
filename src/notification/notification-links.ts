@@ -3,7 +3,8 @@
  * tab slugs in jos-academy (lowercased tab label, spaces as hyphens).
  */
 export const NOTIFICATION_LINKS = {
-  adminCohortReview: (cohortId: string) => `/admin/cohorts/${cohortId}/review`,
+  adminProgramReview: (courseId: string) =>
+    `/admin/programs/${courseId}/review`,
   adminApplications: () => '/admin?tab=applications',
   creatorPrograms: () => '/creator-dashboard?tab=programs',
   creatorAssignments: () => '/creator-dashboard?tab=assignments',

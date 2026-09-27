@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Patch,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -26,6 +27,7 @@ import {
 import { CourseService } from './course.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -111,6 +113,38 @@ export class CourseController {
   })
   async getCourseById(@Param('id') id: string) {
     return this.courseService.getCourseById(id);
+  }
+
+  @Post(':id/submit-for-review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      "Submit a draft course for admin review; needs its dates and at least 7 days' notice",
+  })
+  @ApiParam({ name: 'id', description: 'Course ID (UUID)' })
+  async submitForReview(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.courseService.submitForReview(id, req.user);
+  }
+
+  @Post(':id/withdraw-from-review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Take a submitted course back to draft, before an admin starts reviewing it',
+  })
+  @ApiParam({ name: 'id', description: 'Course ID (UUID)' })
+  async withdrawFromReview(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.courseService.withdrawFromReview(id, req.user);
   }
 
   @Patch(':id')

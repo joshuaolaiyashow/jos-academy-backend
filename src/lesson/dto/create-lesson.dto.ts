@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { LessonContentType } from '../../generated/prisma/client';
+import { CODE_LANGUAGES, type CodeLanguage } from '../../common/code-languages';
 
 export class CreateLessonDto {
   @ApiProperty({
@@ -61,6 +63,17 @@ export class CreateLessonDto {
   @IsOptional()
   @IsString()
   content?: string;
+
+  @ApiPropertyOptional({
+    enum: CODE_LANGUAGES,
+    example: 'javascript',
+    description: 'Language of the code (used when contentType is code)',
+  })
+  @IsOptional()
+  @IsIn(CODE_LANGUAGES, {
+    message: `codeLanguage must be one of: ${CODE_LANGUAGES.join(', ')}`,
+  })
+  codeLanguage?: CodeLanguage;
 
   @ApiPropertyOptional({
     example: 15,

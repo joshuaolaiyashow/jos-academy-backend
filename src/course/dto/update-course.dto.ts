@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsOptional,
@@ -71,6 +72,27 @@ export class UpdateCourseDto {
   @IsInt()
   @Min(1)
   maxCohortSize?: number;
+
+  @ApiPropertyOptional({
+    example: '2026-10-12T09:00:00.000Z',
+    description: 'First day of the program (it runs as one cohort)',
+  })
+  @IsOptional()
+  @IsDateString()
+  startsAt?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-10-19T23:59:00.000Z',
+    description: 'No new seats after this until the program ends',
+  })
+  @IsOptional()
+  @IsDateString()
+  enrollmentClosesAt?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-18T17:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  endsAt?: string;
 
   @ApiPropertyOptional({ example: 150000 })
   @IsOptional()

@@ -4,11 +4,7 @@ import { Test } from '@nestjs/testing';
 import { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
-import {
-  CohortStatus,
-  CourseStatus,
-  UserRole,
-} from '../src/generated/prisma/client';
+import { CourseStatus, UserRole } from '../src/generated/prisma/client';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 export type SeededUser = {
@@ -114,26 +110,4 @@ export const seedCourse = async (
       .sort((a, b) => a.order - b.order)
       .map((lesson) => lesson.id),
   };
-};
-
-const HELPER_DAY_MS = 24 * 60 * 60 * 1000;
-
-/** An approved cohort that is open for new seats: starts in 2 weeks, runs ~2 months. */
-export const seedOpenCohort = async (
-  app: INestApplication<App>,
-  courseId: string,
-): Promise<string> => {
-  const now = Date.now();
-  const cohort = await app.get(PrismaService).cohort.create({
-    data: {
-      courseId,
-      name: 'Open cohort',
-      startsAt: new Date(now + 14 * HELPER_DAY_MS),
-      enrollmentClosesAt: new Date(now + 21 * HELPER_DAY_MS),
-      endsAt: new Date(now + 60 * HELPER_DAY_MS),
-      seatCap: 30,
-      status: CohortStatus.APPROVED,
-    },
-  });
-  return cohort.id;
 };

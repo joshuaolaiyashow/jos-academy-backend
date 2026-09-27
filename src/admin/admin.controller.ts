@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../generated/prisma/client';
+import { ReviewCourseDto } from './dto/review-course.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { ListStudentsQueryDto } from './dto/list-students-query.dto';
 import { ListProgramsQueryDto } from './dto/list-programs-query.dto';
@@ -112,6 +113,49 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Course not found.' })
   async getProgram(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.getProgram(id);
+  }
+
+  @Get('programs/:id/review')
+  @ApiOperation({
+    summary:
+      'A program with its dates and full curriculum, for the review page (Admin only)',
+  })
+  @ApiParam({ name: 'id', description: 'Course ID (UUID)' })
+  async getProgramForReview(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getProgramForReview(id);
+  }
+
+  @Patch('programs/:id/start-review')
+  @ApiOperation({
+    summary:
+      'Start reviewing a pending course; locks creator edits (Admin only)',
+  })
+  @ApiParam({ name: 'id', description: 'Course ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Course is now in review.' })
+  @ApiResponse({ status: 400, description: 'Course is not pending review.' })
+  async startProgramReview(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.startReview(id);
+  }
+
+  @Patch('programs/:id/review')
+  @ApiOperation({
+    summary: 'Approve or reject a course that is in review (Admin only)',
+  })
+  @ApiParam({ name: 'id', description: 'Course ID (UUID)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Course status updated; creator notified.',
+  })
+  async reviewProgram(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewCourseDto,
+  ) {
+    return this.adminService.reviewCourse(
+      id,
+      dto.status,
+      dto.reason,
+      dto.attachmentUrls,
+    );
   }
 
   @Get('analytics')

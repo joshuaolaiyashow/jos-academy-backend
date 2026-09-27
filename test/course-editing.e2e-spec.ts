@@ -3,7 +3,6 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 
 import {
-  CohortStatus,
   CourseStatus,
   EnrollmentStatus,
   EnrollmentType,
@@ -28,7 +27,7 @@ const noteLesson = (moduleId: string, title: string) => ({
   content: 'Body',
 });
 
-describe('Program editing and the cohort content lock (e2e)', () => {
+describe('Program editing and the review lock (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let admin: SeededUser;
@@ -36,6 +35,9 @@ describe('Program editing and the cohort content lock (e2e)', () => {
   let otherCreator: SeededUser;
 
   const http = () => request(app.getHttpServer());
+
+  const setStatus = (id: string, status: CourseStatus) =>
+    prisma.course.update({ where: { id }, data: { status } });
 
   const moduleTitles = async (courseId: string): Promise<string[]> => {
     const response = await http().get(`/course/${courseId}`).expect(200);
@@ -198,7 +200,7 @@ describe('Program editing and the cohort content lock (e2e)', () => {
     });
   });
 
-  describe('cohort content lock', () => {
+  describe('review lock', () => {
     let courseId: string;
     let moduleId: string;
     let lessonId: string;
@@ -248,48 +250,73 @@ describe('Program editing and the cohort content lock (e2e)', () => {
       }
     };
 
-    let cohortId: string;
-
-    const setCohort = (status: CohortStatus, endsInDays = 60) =>
-      prisma.cohort.update({
-        where: { id: cohortId },
-        data: { status, endsAt: new Date(Date.now() + endsInDays * DAY_MS) },
-      });
-
     beforeAll(async () => {
-      const course = await seedCourse(app, creator.id, 1, CourseStatus.DRAFT);
+      const course = await seedCourse(
+        app,
+        creator.id,
+        1,
+        CourseStatus.PENDING_REVIEW,
+      );
       courseId = course.id;
       moduleId = course.moduleId;
       lessonId = course.lessonIds[0];
-      const cohort = await prisma.cohort.create({
-        data: {
-          courseId,
-          name: 'Locking cohort',
-          startsAt: new Date(Date.now() + 14 * DAY_MS),
-          enrollmentClosesAt: new Date(Date.now() + 21 * DAY_MS),
-          endsAt: new Date(Date.now() + 60 * DAY_MS),
-          seatCap: 30,
-          status: CohortStatus.PENDING_REVIEW,
-        },
-      });
-      cohortId = cohort.id;
     });
 
-    it('keeps the program editable while its cohort is only pending', async () => {
+    it('keeps a pending program editable and in the queue', async () => {
       await http()
         .patch(`/lessons/${lessonId}`)
         .set(auth(creator))
         .send({ title: 'Fixed typo' })
         .expect(200);
+      const course = await prisma.course.findUniqueOrThrow({
+        where: { id: courseId },
+      });
+      expect(course.status).toBe(CourseStatus.PENDING_REVIEW);
     });
 
-    it('locks the creator out of every change while a cohort is in review', async () => {
-      await setCohort(CohortStatus.IN_REVIEW);
+    it('will not approve a program whose review has not started', async () => {
+      await http()
+        .patch(`/admin/programs/${courseId}/review`)
+        .set(auth(admin))
+        .send({ status: 'ACTIVE' })
+        .expect(400);
+    });
+
+    it('only lets admins start a review', async () => {
+      await http()
+        .patch(`/admin/programs/${courseId}/start-review`)
+        .set(auth(creator))
+        .expect(403);
+      const response = await http()
+        .patch(`/admin/programs/${courseId}/start-review`)
+        .set(auth(admin))
+        .expect(200);
+      expect(response.body.status).toBe(CourseStatus.IN_REVIEW);
+
+      const notification = await prisma.notification.findFirst({
+        where: { userId: creator.id, type: 'program-review' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(notification?.body).toContain('Editing is paused');
+    });
+
+    it('refuses to start a review twice', async () => {
+      await http()
+        .patch(`/admin/programs/${courseId}/start-review`)
+        .set(auth(admin))
+        .expect(400);
+    });
+
+    it('locks the creator out of every change while in review', async () => {
       await expectCreatorLockedOut();
     });
 
     it('unlocks the program when the review requests changes', async () => {
-      await setCohort(CohortStatus.CHANGES_REQUESTED);
+      await http()
+        .patch(`/admin/programs/${courseId}/review`)
+        .set(auth(admin))
+        .send({ status: 'REJECTED', reason: 'Add a lesson' })
+        .expect(200);
       await http()
         .patch(`/lessons/${lessonId}`)
         .set(auth(creator))
@@ -297,9 +324,23 @@ describe('Program editing and the cohort content lock (e2e)', () => {
         .expect(200);
     });
 
-    it('locks the program while an approved cohort has not ended', async () => {
-      await setCohort(CohortStatus.APPROVED);
+    it('locks the program for good once it is approved', async () => {
+      await setStatus(courseId, CourseStatus.PENDING_REVIEW);
+      await http()
+        .patch(`/admin/programs/${courseId}/start-review`)
+        .set(auth(admin))
+        .expect(200);
+      await http()
+        .patch(`/admin/programs/${courseId}/review`)
+        .set(auth(admin))
+        .send({ status: 'ACTIVE' })
+        .expect(200);
+
       await expectCreatorLockedOut();
+      await http()
+        .post(`/course/${courseId}/submit-for-review`)
+        .set(auth(creator))
+        .expect(400);
     });
 
     it('still lets the creator add a project to a live program', async () => {
@@ -320,15 +361,6 @@ describe('Program editing and the cohort content lock (e2e)', () => {
         .patch(`/lessons/${lessonId}`)
         .set(auth(admin))
         .send({ title: 'Admin fix' })
-        .expect(200);
-    });
-
-    it('unlocks the program once the approved cohort has ended', async () => {
-      await setCohort(CohortStatus.APPROVED, -1);
-      await http()
-        .patch(`/lessons/${lessonId}`)
-        .set(auth(creator))
-        .send({ title: 'Updated for the next run' })
         .expect(200);
     });
   });
@@ -405,30 +437,25 @@ describe('Program editing and the cohort content lock (e2e)', () => {
       await prisma.modules.delete({ where: { id: fullModule.id } });
     });
 
-    it('blocks cohort submission until every module has exactly its planned lessons', async () => {
-      const cohort = await prisma.cohort.create({
+    it('blocks review until every module has exactly its planned lessons', async () => {
+      await prisma.course.update({
+        where: { id: courseId },
         data: {
-          courseId,
-          name: 'Plan check',
           startsAt: new Date(Date.now() + 14 * DAY_MS),
           enrollmentClosesAt: new Date(Date.now() + 21 * DAY_MS),
           endsAt: new Date(Date.now() + 60 * DAY_MS),
-          seatCap: 30,
-          modules: {
-            create: { moduleId, startsAt: new Date(Date.now() + 14 * DAY_MS) },
-          },
         },
       });
       await setPlannedLessons(4).expect(200);
       const refused = await http()
-        .post(`/cohorts/${cohort.id}/submit`)
+        .post(`/course/${courseId}/submit-for-review`)
         .set(auth(creator))
         .expect(400);
       expect(refused.body.message).toContain('"Module 1": 3 of 4 lessons');
 
       await setPlannedLessons(3).expect(200);
       await http()
-        .post(`/cohorts/${cohort.id}/submit`)
+        .post(`/course/${courseId}/submit-for-review`)
         .set(auth(creator))
         .expect(201);
     });
