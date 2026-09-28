@@ -47,6 +47,16 @@ export class ReferralService {
       select: { referredById: true, referralDiscountUsedAt: true },
     });
     if (!user?.referredById || user.referralDiscountUsedAt) return 0;
+    // The discount is only marked used once a top-up is paid, so without this a
+    // buyer could open several discounted checkouts before any of them settled.
+    const pendingClaim = await client.payment.count({
+      where: {
+        userId,
+        status: PaymentStatus.PENDING,
+        referralDiscountAmount: { not: null },
+      },
+    });
+    if (pendingClaim > 0) return 0;
     return Math.floor((amount * REFERRAL_DISCOUNT_PERCENT) / 100);
   }
 

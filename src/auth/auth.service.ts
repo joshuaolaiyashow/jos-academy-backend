@@ -18,6 +18,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { generateReferralCode } from '../utils';
 import { UserRole, VerificationType } from '../generated/prisma/client';
+import { SELF_SIGNUP_ROLES } from './auth.constants';
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import {
@@ -98,6 +99,11 @@ export class AuthService {
    */
   async signUp(body: RegisterDto) {
     const { email, name, password, role, referralCode } = body;
+    // Defense in depth: ADMIN must never be reachable through self-registration,
+    // whatever RegisterDto validation currently allows.
+    if (role && !SELF_SIGNUP_ROLES.includes(role)) {
+      throw new BadRequestException('Role must be USER or INSTRUCTOR');
+    }
 
     // 1. Check if email already exists
     const existingUser = await this.prisma.user.findUnique({

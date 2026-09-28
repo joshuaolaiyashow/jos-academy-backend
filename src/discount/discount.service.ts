@@ -10,6 +10,7 @@ import { AUDIT_ACTIONS, AUDIT_TARGETS } from '../audit/audit-actions';
 import {
   DiscountAppliesTo,
   DiscountTarget,
+  PaymentStatus,
   Prisma,
 } from '../generated/prisma/client';
 import { ValidateDiscountDto } from './dto/validate-discount.dto';
@@ -39,6 +40,34 @@ export class DiscountService {
 
   private normalizeCode(code: string): string {
     return code.trim().toUpperCase();
+  }
+
+  /**
+   * Redemptions already settled, plus (for a top-up, whose discount is only
+   * settled once Paystack confirms payment) top-ups still pending on this
+   * code. Without the pending count, a buyer could open many discounted
+   * checkouts before any of them redeemed and pay for every one of them.
+   */
+  private async countCommitments(
+    client: DbClient,
+    campaignId: string,
+    target: DiscountTarget,
+    userId?: string,
+  ): Promise<number> {
+    const redemptions = await client.discountRedemption.count({
+      where: { campaignId, ...(userId ? { userId } : {}) },
+    });
+    if (target !== DiscountTarget.CREDIT_TOP_UP) {
+      return redemptions;
+    }
+    const pendingCheckouts = await client.payment.count({
+      where: {
+        discountCampaignId: campaignId,
+        status: PaymentStatus.PENDING,
+        ...(userId ? { userId } : {}),
+      },
+    });
+    return redemptions + pendingCheckouts;
   }
 
   /**
@@ -81,9 +110,7 @@ export class DiscountService {
     }
 
     if (campaign.maxRedemptions !== null) {
-      const used = await client.discountRedemption.count({
-        where: { campaignId: campaign.id },
-      });
+      const used = await this.countCommitments(client, campaign.id, target);
       if (used >= campaign.maxRedemptions) {
         throw new BadRequestException(
           'This discount code has been fully redeemed.',
@@ -91,9 +118,12 @@ export class DiscountService {
       }
     }
 
-    const usedByUser = await client.discountRedemption.count({
-      where: { campaignId: campaign.id, userId },
-    });
+    const usedByUser = await this.countCommitments(
+      client,
+      campaign.id,
+      target,
+      userId,
+    );
     if (usedByUser >= campaign.perUserLimit) {
       throw new ConflictException('You have already used this discount code.');
     }

@@ -54,37 +54,63 @@ export class CreditService {
     }
 
     const fullPriceInNaira = credits * NAIRA_PER_CREDIT;
-    const discount = discountCode
-      ? await this.discountService.resolveDiscount(
-          userId,
-          discountCode,
-          DiscountTarget.CREDIT_TOP_UP,
-          fullPriceInNaira,
-        )
-      : null;
-    // The referee discount never stacks with a code; it waits for a purchase without one.
-    const referralDiscount = discount
-      ? 0
-      : await this.referrals.discountFor(userId, fullPriceInNaira);
-    const amountInNaira = discount
-      ? discount.finalAmount
-      : fullPriceInNaira - referralDiscount;
     const reference = `JOS-CRD-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
 
-    // Record pending payment in database
-    const payment = await this.prisma.payment.create({
-      data: {
-        userId,
-        amount: amountInNaira,
-        credits,
-        reference,
-        status: PaymentStatus.PENDING,
-        type: PaymentType.CREDIT_TOP_UP,
-        discountCampaignId: discount?.campaignId,
-        discountAmount: discount?.discountAmount,
-        referralDiscountAmount: referralDiscount || null,
-      },
-    });
+    // A code's redemption isn't recorded until this top-up is paid, so without
+    // a lock two checkouts opened back to back could both pass the same
+    // maxRedemptions/perUserLimit check. Locking the campaign row (and doing
+    // the whole check-then-create in one transaction, before the Paystack
+    // call) keeps concurrent checkouts from ever both winning that race.
+    const { discount, referralDiscount, amountInNaira, payment } =
+      await this.prisma.$transaction(async (tx) => {
+        // Locks this user's row first, so two of their own checkouts opened back to
+        // back (discounted or referral) are serialized rather than both reading the
+        // same "not yet spent" state and both winning it.
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+        if (discountCode) {
+          const campaign = await tx.discountCampaign.findUnique({
+            where: { code: discountCode.trim().toUpperCase() },
+            select: { id: true },
+          });
+          if (campaign) {
+            // Also locks the campaign row, so its cross-user maxRedemptions cap
+            // is enforced against other buyers' checkouts, not just this user's.
+            await tx.$queryRaw`SELECT id FROM "DiscountCampaign" WHERE id = ${campaign.id} FOR UPDATE`;
+          }
+        }
+        const discount = discountCode
+          ? await this.discountService.resolveDiscount(
+              userId,
+              discountCode,
+              DiscountTarget.CREDIT_TOP_UP,
+              fullPriceInNaira,
+              tx,
+            )
+          : null;
+        // The referee discount never stacks with a code; it waits for a purchase without one.
+        const referralDiscount = discount
+          ? 0
+          : await this.referrals.discountFor(userId, fullPriceInNaira, tx);
+        const amountInNaira = discount
+          ? discount.finalAmount
+          : fullPriceInNaira - referralDiscount;
+
+        const payment = await tx.payment.create({
+          data: {
+            userId,
+            amount: amountInNaira,
+            credits,
+            reference,
+            status: PaymentStatus.PENDING,
+            type: PaymentType.CREDIT_TOP_UP,
+            discountCampaignId: discount?.campaignId,
+            discountAmount: discount?.discountAmount,
+            referralDiscountAmount: referralDiscount || null,
+          },
+        });
+
+        return { discount, referralDiscount, amountInNaira, payment };
+      });
 
     // Initialize Paystack checkout
     const paystackData = await this.paymentService.initializePayment({

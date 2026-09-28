@@ -1,6 +1,12 @@
+import { UserRole } from '../generated/prisma/client';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const CLIENT_TYPES = ['web', 'mobile'] as const;
+
+/** Roles a person may pick at sign-up; admins are only ever granted by another admin. */
+export const SELF_SIGNUP_ROLES = [UserRole.USER, UserRole.INSTRUCTOR] as const;
+export type SelfSignupRole = (typeof SELF_SIGNUP_ROLES)[number];
 export type ClientType = (typeof CLIENT_TYPES)[number];
 
 /**

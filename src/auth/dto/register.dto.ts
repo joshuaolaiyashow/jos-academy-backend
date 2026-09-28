@@ -1,13 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
-  IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
 import { UserRole } from '../../generated/prisma/client';
+import { SELF_SIGNUP_ROLES, type SelfSignupRole } from '../auth.constants';
 
 export class RegisterDto {
   @ApiProperty({
@@ -44,11 +45,11 @@ export class RegisterDto {
   referralCode?: string;
 
   @ApiPropertyOptional({
-    enum: UserRole,
+    enum: SELF_SIGNUP_ROLES,
     default: UserRole.USER,
     description: 'Role of the user (USER or INSTRUCTOR)',
   })
   @IsOptional()
-  @IsEnum(UserRole, { message: 'Role must be USER or INSTRUCTOR' })
-  role?: UserRole;
+  @IsIn(SELF_SIGNUP_ROLES, { message: 'Role must be USER or INSTRUCTOR' })
+  role?: SelfSignupRole;
 }
