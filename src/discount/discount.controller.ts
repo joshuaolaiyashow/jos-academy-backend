@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { DiscountService } from './discount.service';
 import { ValidateDiscountDto } from './dto/validate-discount.dto';
 import {
   CreateDiscountCampaignDto,
+  SetCampaignInviteesDto,
   UpdateDiscountCampaignDto,
 } from './dto/create-discount-campaign.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -84,5 +86,30 @@ export class DiscountController {
   @ApiOperation({ summary: 'Which students used a campaign (Admin)' })
   listRedemptions(@Param('id') id: string) {
     return this.discountService.listCampaignRedemptions(id);
+  }
+
+  @Get('admin/campaigns/:id/invitees')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Who can redeem an invite-only campaign (Admin)',
+  })
+  listInvitees(@Param('id') id: string) {
+    return this.discountService.listInvitees(id);
+  }
+
+  @Put('admin/campaigns/:id/invitees')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary:
+      "Replace an invite-only campaign's eligible users (Admin); an empty list reopens the code to anyone",
+  })
+  async setInvitees(
+    @Param('id') id: string,
+    @Body() dto: SetCampaignInviteesDto,
+  ) {
+    await this.discountService.setInvitees(id, dto.userIds);
+    return this.discountService.listInvitees(id);
   }
 }

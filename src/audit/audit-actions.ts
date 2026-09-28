@@ -22,6 +22,7 @@ export const AUDIT_ACTIONS = {
   CREATOR_CREATED: 'creator.created',
   DISCOUNT_CAMPAIGN_CREATED: 'discount_campaign.created',
   DISCOUNT_CAMPAIGN_UPDATED: 'discount_campaign.updated',
+  DISCOUNT_CAMPAIGN_INVITEES_UPDATED: 'discount_campaign.invitees_updated',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

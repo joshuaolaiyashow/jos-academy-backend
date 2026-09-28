@@ -88,6 +88,16 @@ export class DiscountService {
     if (!campaign || !campaign.isActive) {
       throw new BadRequestException('This discount code is not valid.');
     }
+    if (campaign.isInviteOnly) {
+      const invited = await client.discountCampaignInvite.findUnique({
+        where: { campaignId_userId: { campaignId: campaign.id, userId } },
+        select: { id: true },
+      });
+      if (!invited) {
+        // Same message as an unknown code, so the invite list can't be probed by guessing codes.
+        throw new BadRequestException('This discount code is not valid.');
+      }
+    }
 
     const now = new Date();
     if (now < campaign.startsAt) {
@@ -140,6 +150,53 @@ export class DiscountService {
     };
   }
 
+  private async assertUsersExist(userIds: string[]): Promise<void> {
+    const found = await this.prisma.user.count({
+      where: { id: { in: userIds } },
+    });
+    if (found !== userIds.length) {
+      throw new BadRequestException(
+        'One or more of the given user IDs do not exist.',
+      );
+    }
+  }
+
+  /** Replaces a campaign's full invite list; an empty list reopens the code to anyone. */
+  async setInvitees(campaignId: string, userIds: string[]): Promise<void> {
+    const campaign = await this.prisma.discountCampaign.findUnique({
+      where: { id: campaignId },
+      select: { id: true },
+    });
+    if (!campaign) {
+      throw new NotFoundException(`Campaign with ID "${campaignId}" not found`);
+    }
+    const uniqueUserIds = [...new Set(userIds)];
+    if (uniqueUserIds.length > 0) {
+      await this.assertUsersExist(uniqueUserIds);
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.discountCampaignInvite.deleteMany({ where: { campaignId } }),
+      ...(uniqueUserIds.length > 0
+        ? [
+            this.prisma.discountCampaignInvite.createMany({
+              data: uniqueUserIds.map((userId) => ({ campaignId, userId })),
+            }),
+          ]
+        : []),
+      this.prisma.discountCampaign.update({
+        where: { id: campaignId },
+        data: { isInviteOnly: uniqueUserIds.length > 0 },
+      }),
+    ]);
+    await this.audit.record({
+      action: AUDIT_ACTIONS.DISCOUNT_CAMPAIGN_INVITEES_UPDATED,
+      targetType: AUDIT_TARGETS.DISCOUNT_CAMPAIGN,
+      targetId: campaignId,
+      metadata: { inviteeCount: uniqueUserIds.length },
+    });
+  }
+
   async recordRedemption(
     client: DbClient,
     params: {
@@ -168,7 +225,13 @@ export class DiscountService {
   async listActive(userId: string) {
     const now = new Date();
     const campaigns = await this.prisma.discountCampaign.findMany({
-      where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
+      where: {
+        isActive: true,
+        startsAt: { lte: now },
+        endsAt: { gte: now },
+        // An invite-only code's existence isn't shown to anyone it wasn't sent to.
+        OR: [{ isInviteOnly: false }, { invitees: { some: { userId } } }],
+      },
       orderBy: { endsAt: 'asc' },
       include: {
         _count: { select: { redemptions: true } },
@@ -222,25 +285,46 @@ export class DiscountService {
       );
     }
 
-    const created = await this.prisma.discountCampaign.create({
-      data: {
-        name: dto.name,
-        code,
-        description: dto.description,
-        percentOff: dto.percentOff,
-        appliesTo: dto.appliesTo,
-        startsAt,
-        endsAt,
-        maxRedemptions: dto.maxRedemptions,
-        perUserLimit: dto.perUserLimit ?? 1,
-        createdById: adminId,
-      },
+    const eligibleUserIds = [...new Set(dto.eligibleUserIds ?? [])];
+    if (eligibleUserIds.length > 0) {
+      await this.assertUsersExist(eligibleUserIds);
+    }
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const campaign = await tx.discountCampaign.create({
+        data: {
+          name: dto.name,
+          code,
+          description: dto.description,
+          percentOff: dto.percentOff,
+          appliesTo: dto.appliesTo,
+          startsAt,
+          endsAt,
+          maxRedemptions: dto.maxRedemptions,
+          perUserLimit: dto.perUserLimit ?? 1,
+          createdById: adminId,
+          isInviteOnly: eligibleUserIds.length > 0,
+        },
+      });
+      if (eligibleUserIds.length > 0) {
+        await tx.discountCampaignInvite.createMany({
+          data: eligibleUserIds.map((userId) => ({
+            campaignId: campaign.id,
+            userId,
+          })),
+        });
+      }
+      return campaign;
     });
     await this.audit.record({
       action: AUDIT_ACTIONS.DISCOUNT_CAMPAIGN_CREATED,
       targetType: AUDIT_TARGETS.DISCOUNT_CAMPAIGN,
       targetId: created.id,
-      metadata: { code: created.code, percentOff: created.percentOff },
+      metadata: {
+        code: created.code,
+        percentOff: created.percentOff,
+        inviteeCount: eligibleUserIds.length,
+      },
     });
     return created;
   }
@@ -301,7 +385,7 @@ export class DiscountService {
     const [campaigns, totals] = await Promise.all([
       this.prisma.discountCampaign.findMany({
         orderBy: { createdAt: 'desc' },
-        include: { _count: { select: { redemptions: true } } },
+        include: { _count: { select: { redemptions: true, invitees: true } } },
       }),
       this.prisma.discountRedemption.groupBy({
         by: ['campaignId'],
@@ -318,8 +402,30 @@ export class DiscountService {
       campaigns: campaigns.map((c) => ({
         ...c,
         redemptionCount: c._count.redemptions,
+        inviteeCount: c._count.invitees,
         totalDiscountGiven: savedByCampaign.get(c.id) ?? 0,
       })),
+    };
+  }
+
+  async listInvitees(campaignId: string) {
+    const campaign = await this.prisma.discountCampaign.findUnique({
+      where: { id: campaignId },
+      select: { id: true, isInviteOnly: true },
+    });
+    if (!campaign) {
+      throw new NotFoundException(`Campaign with ID "${campaignId}" not found`);
+    }
+    const invitees = await this.prisma.discountCampaignInvite.findMany({
+      where: { campaignId },
+      orderBy: { createdAt: 'asc' },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    });
+    return {
+      campaignId,
+      isInviteOnly: campaign.isInviteOnly,
+      total: invitees.length,
+      invitees: invitees.map((invite) => invite.user),
     };
   }
 

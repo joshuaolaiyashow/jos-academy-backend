@@ -48,6 +48,7 @@ model User {
   createdCourses         Course[]                     @relation("CreatedCourses")
   refreshTokens          RefreshToken[]
   discountRedemptions    DiscountRedemption[]
+  discountInvites        DiscountCampaignInvite[]
   onboarding             StudentOnboarding?
   badges                 UserBadge[]
   reviews                Review[]
@@ -340,11 +341,11 @@ enum ProjectSubmissionType {
 }
 
 model CourseProject {
-  id          String              @id @default(uuid())
-  courseId    String
-  course      Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  title       String
-  description String              @db.Text
+  id             String                @id @default(uuid())
+  courseId       String
+  course         Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title          String
+  description    String                @db.Text
   /// Ordered milestone labels; learners submit them in order.
   milestones     String[]
   submissionType ProjectSubmissionType @default(CODE)
@@ -610,13 +611,31 @@ model DiscountCampaign {
   perUserLimit   Int               @default(1)
   isActive       Boolean           @default(true)
   createdById    String?
+  // True restricts the code to `invitees`; false (the default) leaves it open to
+  // anyone who has the code, same as before this field existed.
+  isInviteOnly   Boolean           @default(false)
 
   redemptions DiscountRedemption[]
+  invitees    DiscountCampaignInvite[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([isActive, startsAt, endsAt])
+}
+
+// One row per user allowed to redeem an invite-only campaign.
+model DiscountCampaignInvite {
+  id         String           @id @default(uuid())
+  campaignId String
+  campaign   DiscountCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([campaignId, userId])
+  @@index([userId])
 }
 
 // One row per use of a campaign. Amounts are Naira for CREDIT_TOP_UP and

@@ -1,5 +1,12 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
+import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsBoolean,
   IsDateString,
   IsEnum,
@@ -7,12 +14,16 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DiscountAppliesTo } from '../../generated/prisma/client';
+
+/** Keeps a single campaign creation to one SQL statement's worth of invite rows. */
+export const MAX_CAMPAIGN_INVITEES = 1000;
 
 export class CreateDiscountCampaignDto {
   @ApiProperty({ example: 'Launch week' })
@@ -66,13 +77,38 @@ export class CreateDiscountCampaignDto {
   @IsInt()
   @Min(1)
   perUserLimit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'User IDs allowed to redeem this code; omit or leave empty for a code open to anyone.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsUUID('4', { each: true })
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_CAMPAIGN_INVITEES)
+  eligibleUserIds?: string[];
 }
 
+// The invitee list has its own endpoint (PUT /admin/campaigns/:id/invitees),
+// so it's excluded here to avoid a PATCH silently ignoring it.
 export class UpdateDiscountCampaignDto extends PartialType(
-  CreateDiscountCampaignDto,
+  OmitType(CreateDiscountCampaignDto, ['eligibleUserIds'] as const),
 ) {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class SetCampaignInviteesDto {
+  @ApiProperty({
+    description:
+      'Replaces the full invitee list. Send an empty array to open the code to anyone.',
+    type: [String],
+  })
+  @IsUUID('4', { each: true })
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_CAMPAIGN_INVITEES)
+  userIds: string[];
 }
