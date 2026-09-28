@@ -26,6 +26,7 @@ import { CourseProjectService } from './course-project.service';
 import { CreateCourseProjectDto } from './dto/create-course-project.dto';
 import { SubmitMilestoneDto } from './dto/submit-milestone.dto';
 import { UpdateCourseProjectDto } from './dto/update-course-project.dto';
+import { RequestSubmissionUploadDto } from './dto/request-submission-upload.dto';
 
 @ApiTags('Projects')
 @Controller('projects')
@@ -86,9 +87,27 @@ export class CourseProjectController {
     return this.projects.listSubmissions(req.user, id);
   }
 
+  @Post(':id/upload-url')
+  @ApiOperation({
+    summary:
+      'Get a presigned URL to upload milestone work; pass the returned fileUrl when submitting',
+  })
+  @ApiResponse({
+    status: 400,
+    description: "File type not accepted for this project's submission type.",
+  })
+  async requestSubmissionUpload(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestSubmissionUploadDto,
+  ) {
+    return this.projects.requestSubmissionUpload(req.user, id, dto);
+  }
+
   @Post(':id/milestones/:index')
   @ApiOperation({
-    summary: 'Submit a milestone link (in order; resubmission allowed)',
+    summary:
+      'Submit milestone work as a link or uploaded file (in order; resubmission allowed)',
   })
   @ApiParam({ name: 'index', description: 'Zero-based milestone index' })
   @ApiResponse({

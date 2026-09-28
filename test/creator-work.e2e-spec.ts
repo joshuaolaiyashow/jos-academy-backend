@@ -19,10 +19,6 @@ import {
   type SeededUser,
 } from './e2e-helpers';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const inDays = (days: number) =>
-  new Date(Date.now() + days * DAY_MS).toISOString();
-
 /** Stands in for S3 so file answers can be exercised without AWS. */
 const uploadOptions: Array<{ asAttachment?: boolean } | undefined> = [];
 
@@ -427,7 +423,7 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
         .expect(403);
     });
 
-    it('creates a project with its demo day', async () => {
+    it('creates a code project by default', async () => {
       const created = await http()
         .post('/projects')
         .set(auth(creator))
@@ -436,11 +432,11 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
           title: 'Line-following robot',
           description: 'Build a robot that follows a line.',
           milestones: ['Design doc', 'Prototype', 'Final build'],
-          demoDay: inDays(31),
         })
         .expect(201);
       projectId = created.body.id;
-      expect(created.body.demoDay).toEqual(expect.any(String));
+      expect(created.body.submissionType).toBe('CODE');
+      expect(created.body).not.toHaveProperty('demoDay');
     });
 
     it('makes learners submit milestones in order with https links', async () => {
@@ -453,7 +449,6 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
         milestones: ['Design doc', 'Prototype', 'Final build'],
         mySubmissions: [],
       });
-      expect(list.body.projects[0].demoDay).toEqual(expect.any(String));
 
       await http()
         .post(`/projects/${projectId}/milestones/1`)
@@ -517,6 +512,59 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
         .get(`/projects/${projectId}/submissions`)
         .set(auth(otherCreator))
         .expect(403);
+    });
+
+    it('takes only uploaded recordings for a recording project', async () => {
+      const created = await http()
+        .post('/projects')
+        .set(auth(creator))
+        .send({
+          courseId,
+          title: 'Pitch recording',
+          description: 'Record a two-minute pitch.',
+          milestones: ['Final pitch'],
+          submissionType: 'RECORDING',
+        })
+        .expect(201);
+      const recordingProjectId: string = created.body.id;
+      const ownFolder = `academy/projects/submissions/${recordingProjectId}/${learner.id}`;
+
+      await http()
+        .post(`/projects/${recordingProjectId}/upload-url`)
+        .set(auth(learner))
+        .send({ fileName: 'code.zip', contentType: 'application/zip' })
+        .expect(400);
+      await http()
+        .post(`/projects/${recordingProjectId}/milestones/0`)
+        .set(auth(learner))
+        .send({ url: 'https://youtube.com/watch?v=pitch' })
+        .expect(400);
+      await http()
+        .post(`/projects/${recordingProjectId}/milestones/0`)
+        .set(auth(learner))
+        .send({
+          fileUrl: `https://media.test/academy/projects/submissions/${recordingProjectId}/${outsider.id}/pitch.mp4`,
+          fileName: 'pitch.mp4',
+        })
+        .expect(400);
+      const submitted = await http()
+        .post(`/projects/${recordingProjectId}/milestones/0`)
+        .set(auth(learner))
+        .send({
+          fileUrl: `https://media.test/${ownFolder}/pitch.mp4`,
+          fileName: 'pitch.mp4',
+        })
+        .expect(201);
+      expect(submitted.body).toMatchObject({
+        url: null,
+        fileName: 'pitch.mp4',
+      });
+
+      await http()
+        .patch(`/projects/${recordingProjectId}`)
+        .set(auth(creator))
+        .send({ status: 'ARCHIVED' })
+        .expect(200);
     });
 
     it('lets the creator edit and archive the project', async () => {

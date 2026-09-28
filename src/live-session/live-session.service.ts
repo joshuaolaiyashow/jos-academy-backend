@@ -13,14 +13,46 @@ import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 import { UpdateLiveSessionDto } from './dto/update-live-session.dto';
 import {
   AttendanceStatus,
+  EnrollmentStatus,
   LiveSessionStatus,
   UserRole,
 } from '../generated/prisma/client';
 import { CourseAccessService } from '../course-access/course-access.service';
-import { NotificationService } from '../notification/notification.service';
+import { LiveKitService, type LiveKitJoinGrant } from './livekit.service';
+import { LiveSessionNotifier } from './live-session-notifier.service';
 import { ENROLLMENT_ACCESS_STATUSES } from '../enrollment/enrollment-access';
 
+/** Learners can enter from the moment the waiting room opens. */
+const JOINABLE_STATUSES: LiveSessionStatus[] = [
+  LiveSessionStatus.WAITING,
+  LiveSessionStatus.LIVE,
+];
+
+/** The statuses each transition may start from; anything else is a 409. */
+const ALLOWED_PREVIOUS_STATUSES: Partial<
+  Record<LiveSessionStatus, LiveSessionStatus[]>
+> = {
+  [LiveSessionStatus.WAITING]: [LiveSessionStatus.SCHEDULED],
+  [LiveSessionStatus.LIVE]: [
+    LiveSessionStatus.SCHEDULED,
+    LiveSessionStatus.WAITING,
+    LiveSessionStatus.LIVE,
+  ],
+  [LiveSessionStatus.CANCELLED]: [
+    LiveSessionStatus.SCHEDULED,
+    LiveSessionStatus.WAITING,
+  ],
+};
+
 type SessionActor = { id: string; role: UserRole };
+
+/** Wide enough for a month grid padded to whole weeks, small enough to keep the query bounded. */
+const MAX_SCHEDULE_WINDOW_DAYS = 45;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const SCHEDULE_ENROLLMENT_STATUSES = [
+  EnrollmentStatus.ACTIVE,
+  EnrollmentStatus.COMPLETED,
+];
 
 @Injectable()
 export class LiveSessionService {
@@ -29,14 +61,12 @@ export class LiveSessionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly courseAccess: CourseAccessService,
-    private readonly notifications: NotificationService,
+    private readonly liveKit: LiveKitService,
+    private readonly notifier: LiveSessionNotifier,
   ) {}
 
-  /** Meeting links are only ever handed out by joinSession or to the owner. */
-  private readonly publicSessionOmit = {
-    meetingLink: true,
-    recordingUrl: true,
-  } as const;
+  /** Recordings are for the program's learners only, not the public session list. */
+  private readonly publicSessionOmit = { recordingUrl: true } as const;
 
   private readonly sessionListSelect = {
     creator: { select: { id: true, name: true } },
@@ -61,6 +91,8 @@ export class LiveSessionService {
     // Sessions are how a cohort is taught, so they're allowed in any program status;
     // only the curriculum is frozen by review and approval.
     await this.courseAccess.assertCourseOwner(creator, courseId);
+    // Fail at scheduling time, not when the host tries to go live.
+    this.liveKit.assertConfigured();
 
     if (moduleId) {
       const module = await this.prisma.modules.findUnique({
@@ -91,17 +123,7 @@ export class LiveSessionService {
       `📅 Live session created: "${session.title}" (ID: ${session.id})`,
     );
 
-    const learners = await this.prisma.enrollment.findMany({
-      where: { courseId, status: { in: ENROLLMENT_ACCESS_STATUSES } },
-      select: { userId: true },
-    });
-    await this.notifications.sendLiveSessionScheduledEmails({
-      userIds: learners.map((learner) => learner.userId),
-      sessionTitle: session.title,
-      courseId,
-      courseName: session.course.name,
-      scheduledAt: session.scheduledAt,
-    });
+    await this.notifier.notifyScheduled(session);
     return {
       message: 'Live session created successfully',
       session,
@@ -132,7 +154,6 @@ export class LiveSessionService {
     await this.courseAccess.assertCourseMember(user, courseId);
     const sessions = await this.prisma.liveSession.findMany({
       where: { courseId },
-      omit: { meetingLink: true },
       include: this.sessionListSelect,
       orderBy: { scheduledAt: 'asc' },
     });
@@ -163,6 +184,54 @@ export class LiveSessionService {
   }
 
   /**
+   * The learner's calendar: every non-cancelled session in the programs they're
+   * enrolled in, within [from, to). Past sessions are included so a day's
+   * agenda still shows what already happened.
+   */
+  async getLearnerSchedule(userId: string, from: string, to: string) {
+    const start = new Date(from);
+    const end = new Date(to);
+    const windowMs = end.getTime() - start.getTime();
+    if (windowMs <= 0) {
+      throw new BadRequestException('to must be after from');
+    }
+    if (windowMs > MAX_SCHEDULE_WINDOW_DAYS * MS_PER_DAY) {
+      throw new BadRequestException(
+        `The schedule window can be at most ${MAX_SCHEDULE_WINDOW_DAYS} days`,
+      );
+    }
+
+    const sessions = await this.prisma.liveSession.findMany({
+      where: {
+        scheduledAt: { gte: start, lt: end },
+        status: { not: LiveSessionStatus.CANCELLED },
+        course: {
+          enrollments: {
+            some: { userId, status: { in: SCHEDULE_ENROLLMENT_STATUSES } },
+          },
+        },
+      },
+      orderBy: { scheduledAt: 'asc' },
+      include: {
+        course: { select: { id: true, name: true } },
+        creator: { select: { name: true } },
+      },
+    });
+
+    return sessions.map((session) => ({
+      id: session.id,
+      title: session.title,
+      type: session.type,
+      scheduledAt: session.scheduledAt,
+      durationMins: session.durationMins,
+      status: session.status,
+      courseId: session.course.id,
+      courseName: session.course.name,
+      creatorName: session.creator.name,
+    }));
+  }
+
+  /**
    * Get a single live session by ID, with full attendance list
    */
   async getLiveSessionById(id: string, user: SessionActor) {
@@ -188,7 +257,11 @@ export class LiveSessionService {
     return session;
   }
 
-  /** Change the meeting link of a scheduled session (creator or admin only). */
+  /**
+   * Reschedule a session that hasn't started (title, type, time, duration) or
+   * set its recording link. Moving the start time re-arms the 30-minute
+   * reminder and tells learners the new time.
+   */
   async updateLiveSession(
     id: string,
     user: SessionActor,
@@ -197,58 +270,199 @@ export class LiveSessionService {
     const existingSession = await this.findSessionOrThrow(id);
     this.assertOwnerOrAdmin(existingSession, user.id, user.role);
 
+    const { recordingUrl, scheduledAt, ...scheduleFields } = dto;
+    const changesSchedule =
+      scheduledAt !== undefined ||
+      Object.values(scheduleFields).some((value) => value !== undefined);
+    if (
+      changesSchedule &&
+      existingSession.status !== LiveSessionStatus.SCHEDULED
+    ) {
+      throw new ConflictException(
+        'Only sessions that have not started can be rescheduled.',
+      );
+    }
+
+    const nextStart = scheduledAt ? new Date(scheduledAt) : undefined;
+    if (nextStart && nextStart.getTime() <= Date.now()) {
+      throw new BadRequestException('Pick a start time in the future.');
+    }
+    const isMoved =
+      nextStart !== undefined &&
+      nextStart.getTime() !== existingSession.scheduledAt.getTime();
+
     const session = await this.prisma.liveSession.update({
       where: { id },
-      data: { meetingLink: dto.meetingLink, recordingUrl: dto.recordingUrl },
+      data: {
+        ...scheduleFields,
+        recordingUrl,
+        scheduledAt: nextStart,
+        ...(isMoved && { reminderSentAt: null }),
+      },
       include: {
         creator: { select: { id: true, name: true } },
         course: { select: { id: true, name: true } },
       },
     });
+
+    if (isMoved) {
+      await this.notifier.notifyRescheduled(
+        session,
+        existingSession.scheduledAt,
+      );
+    }
     return { message: 'Live session updated successfully', session };
   }
 
   /**
-   * A learner joins a session that is live: records their attendance and
-   * returns the meeting link to open.
+   * Removes a session scheduled by mistake. Once learners have registered or
+   * it has run, it must be cancelled instead so the record and their notice survive.
    */
-  async joinSession(sessionId: string, user: SessionActor) {
+  async deleteLiveSession(id: string, user: SessionActor) {
+    const session = await this.prisma.liveSession.findUnique({
+      where: { id },
+      include: {
+        course: { select: { name: true } },
+        _count: { select: { attendance: true } },
+      },
+    });
+    if (!session) {
+      throw new NotFoundException(`Live session with ID "${id}" not found`);
+    }
+    this.assertOwnerOrAdmin(session, user.id, user.role);
+    if (
+      session.status !== LiveSessionStatus.SCHEDULED ||
+      session._count.attendance > 0
+    ) {
+      throw new ConflictException(
+        'This session has registrations or has already run. Cancel it instead.',
+      );
+    }
+
+    await this.prisma.liveSession.delete({ where: { id } });
+    // Learners were emailed when it was scheduled, so they're told it's off.
+    await this.notifier.notifyCancelled(session);
+    return { message: 'Live session deleted' };
+  }
+
+  /**
+   * Joins a live session's LiveKit room: returns a room token for the caller
+   * and, for learners, records their attendance. The host joins the same way.
+   */
+  async joinSession(
+    sessionId: string,
+    user: SessionActor,
+  ): Promise<
+    LiveKitJoinGrant & {
+      sessionTitle: string;
+      courseId: string;
+      isHost: boolean;
+      status: LiveSessionStatus;
+      openedAt: Date | null;
+      startedAt: Date | null;
+      enrolledCount: number;
+    }
+  > {
     const session = await this.findSessionOrThrow(sessionId);
     await this.courseAccess.assertCourseMember(user, session.courseId);
 
-    if (session.status !== LiveSessionStatus.LIVE) {
+    if (!JOINABLE_STATUSES.includes(session.status)) {
       throw new ConflictException(
-        'This session has not started yet. You can join once the host goes live.',
-      );
-    }
-    if (!session.meetingLink) {
-      throw new ConflictException(
-        'The host has not added a meeting link to this session yet.',
+        'This session is not open yet. You can join once the host opens the waiting room.',
       );
     }
 
     const isHost =
       user.role === UserRole.ADMIN || session.creatorId === user.id;
+    const { name } = await this.prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: { name: true },
+    });
+    const grant = await this.liveKit.createJoinToken({
+      sessionId,
+      durationMins: session.durationMins,
+      userId: user.id,
+      userName: name,
+      isHost,
+    });
+
     if (!isHost) {
-      const existing = await this.prisma.sessionAttendance.findUnique({
-        where: { sessionId_userId: { sessionId, userId: user.id } },
-      });
-      await this.prisma.sessionAttendance.upsert({
-        where: { sessionId_userId: { sessionId, userId: user.id } },
-        create: {
-          sessionId,
-          userId: user.id,
-          status: AttendanceStatus.ATTENDED,
-          joinedAt: new Date(),
-        },
-        update: {
-          status: AttendanceStatus.ATTENDED,
-          joinedAt: existing?.joinedAt ?? new Date(),
-        },
+      // Recorded here too, not only from the webhook, so attendance still works
+      // where LiveKit can't reach the API (local development).
+      await this.recordLearnerJoined(sessionId, user.id);
+    }
+    return {
+      ...grant,
+      sessionTitle: session.title,
+      courseId: session.courseId,
+      isHost,
+      status: session.status,
+      openedAt: session.openedAt,
+      startedAt: session.startedAt,
+      enrolledCount: await this.countEnrolled(session.courseId),
+    };
+  }
+
+  /**
+   * Applies LiveKit's signed participant events to attendance, so join and
+   * leave times reflect who was actually in the room.
+   */
+  async handleLiveKitWebhook(
+    rawBody: string,
+    authorization: string | undefined,
+  ): Promise<void> {
+    const event = await this.liveKit.receiveWebhook(rawBody, authorization);
+    const sessionId = event.room
+      ? this.liveKit.sessionIdFromRoom(event.room.name)
+      : null;
+    const userId = event.participant?.identity;
+    if (!sessionId || !userId) return;
+
+    const session = await this.prisma.liveSession.findUnique({
+      where: { id: sessionId },
+      select: { creatorId: true },
+    });
+    // The host's own presence isn't attendance.
+    if (!session || session.creatorId === userId) return;
+
+    if (event.event === 'participant_joined') {
+      await this.recordLearnerJoined(sessionId, userId);
+    } else if (event.event === 'participant_left') {
+      await this.prisma.sessionAttendance.updateMany({
+        where: { sessionId, userId },
+        data: { leftAt: new Date() },
       });
     }
+  }
 
-    return { meetingLink: session.meetingLink };
+  private countEnrolled(courseId: string): Promise<number> {
+    return this.prisma.enrollment.count({
+      where: { courseId, status: { in: ENROLLMENT_ACCESS_STATUSES } },
+    });
+  }
+
+  private async recordLearnerJoined(
+    sessionId: string,
+    userId: string,
+  ): Promise<void> {
+    const existing = await this.prisma.sessionAttendance.findUnique({
+      where: { sessionId_userId: { sessionId, userId } },
+    });
+    await this.prisma.sessionAttendance.upsert({
+      where: { sessionId_userId: { sessionId, userId } },
+      create: {
+        sessionId,
+        userId,
+        status: AttendanceStatus.ATTENDED,
+        joinedAt: new Date(),
+      },
+      update: {
+        status: AttendanceStatus.ATTENDED,
+        // Keep the first join time across reconnects; a rejoin clears the last leave.
+        joinedAt: existing?.joinedAt ?? new Date(),
+        leftAt: null,
+      },
+    });
   }
 
   /**
@@ -285,15 +499,62 @@ export class LiveSessionService {
   ) {
     const existingSession = await this.findSessionOrThrow(id);
     this.assertOwnerOrAdmin(existingSession, userId, userRole);
+    const allowedFrom = ALLOWED_PREVIOUS_STATUSES[dto.status];
+    if (allowedFrom && !allowedFrom.includes(existingSession.status)) {
+      throw new ConflictException(
+        dto.status === LiveSessionStatus.CANCELLED
+          ? 'Only sessions that have not started can be cancelled. End a live session instead.'
+          : `A ${existingSession.status.toLowerCase()} session cannot move to ${dto.status.toLowerCase()}.`,
+      );
+    }
 
+    const now = new Date();
     const session = await this.prisma.liveSession.update({
       where: { id },
-      data: { status: dto.status },
+      data: {
+        status: dto.status,
+        ...(dto.status === LiveSessionStatus.WAITING && { openedAt: now }),
+        ...(dto.status === LiveSessionStatus.LIVE &&
+          !existingSession.startedAt && { startedAt: now }),
+        ...(dto.status === LiveSessionStatus.ENDED && { endedAt: now }),
+      },
       include: {
         creator: { select: { id: true, name: true } },
         course: { select: { id: true, name: true } },
       },
     });
+
+    if (dto.status === LiveSessionStatus.WAITING) {
+      await this.liveKit.openRoom(id, { status: 'WAITING', startedAt: null });
+    }
+    if (
+      dto.status === LiveSessionStatus.LIVE &&
+      existingSession.status !== LiveSessionStatus.LIVE
+    ) {
+      await this.liveKit.updateRoomState(id, {
+        status: 'LIVE',
+        startedAt: (session.startedAt ?? now).toISOString(),
+      });
+      await this.notifier.notifyStarted(session);
+    }
+    if (
+      dto.status === LiveSessionStatus.CANCELLED &&
+      existingSession.status !== LiveSessionStatus.CANCELLED
+    ) {
+      await this.notifier.notifyCancelled(session);
+    }
+    if (
+      dto.status === LiveSessionStatus.ENDED ||
+      (dto.status === LiveSessionStatus.CANCELLED &&
+        existingSession.status === LiveSessionStatus.WAITING)
+    ) {
+      await this.liveKit.closeRoom(id);
+      // Anyone still in the room left when it closed.
+      await this.prisma.sessionAttendance.updateMany({
+        where: { sessionId: id, joinedAt: { not: null }, leftAt: null },
+        data: { leftAt: new Date() },
+      });
+    }
 
     this.logger.log(
       `🔄 Live session "${session.title}" status updated to ${session.status}`,
@@ -387,6 +648,10 @@ export class LiveSessionService {
     return {
       total: attendance.length,
       attendance,
+      enrolledCount: await this.countEnrolled(session.courseId),
+      openedAt: session.openedAt,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
     };
   }
 }

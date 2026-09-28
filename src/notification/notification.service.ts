@@ -6,6 +6,7 @@ import { escapeHtml } from '../utils/escape-html';
 import { pageMeta, toPrismaPage } from '../utils/pagination';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { NotificationEventsService } from './notification-events.service';
+import { NOTIFICATION_LINKS } from './notification-links';
 
 export interface CourseReviewEmailOptions {
   email: string;
@@ -31,13 +32,91 @@ interface AssignmentGradedEmailOptions {
   maxScore: number;
 }
 
+export type LiveSessionEmailKind =
+  'scheduled' | 'reminder' | 'started' | 'rescheduled' | 'cancelled';
+
 interface LiveSessionEmailOptions {
   userIds: string[];
+  sessionId: string;
   sessionTitle: string;
   courseId: string;
   courseName: string;
   scheduledAt: Date;
+  /** Only for 'rescheduled': the time learners were told before. */
+  previousScheduledAt?: Date;
 }
+
+type LiveSessionEmailCopy = {
+  subject: string;
+  heading: string;
+  /** Plain text after "Hi {name}, " — escaped by the caller's template. */
+  sentence: string;
+  buttonLabel: string;
+  buttonPath: string;
+};
+
+const APP_URL = (): string => process.env.APP_URL || 'http://localhost:3000';
+
+const formatLagosTime = (date: Date): string =>
+  date.toLocaleString('en-GB', {
+    dateStyle: 'full',
+    timeStyle: 'short',
+    timeZone: LIVE_SESSION_EMAIL_TIME_ZONE,
+  });
+
+const liveSessionEmailCopy = (
+  kind: LiveSessionEmailKind,
+  options: LiveSessionEmailOptions,
+  when: string,
+): LiveSessionEmailCopy => {
+  const { sessionId, sessionTitle, courseId, courseName } = options;
+  switch (kind) {
+    case 'scheduled':
+      return {
+        subject: `New live session: ${sessionTitle}`,
+        heading: 'A live session was scheduled',
+        sentence: `${sessionTitle} for ${courseName} is on ${when} (Lagos time).`,
+        buttonLabel: 'Open program',
+        buttonPath: NOTIFICATION_LINKS.program(courseId),
+      };
+    case 'reminder':
+      return {
+        subject: `Starting soon: ${sessionTitle}`,
+        heading: 'Your live session starts soon',
+        sentence: `${sessionTitle} for ${courseName} starts at ${when} (Lagos time). You can join from your dashboard as soon as the host goes live.`,
+        buttonLabel: 'Open dashboard',
+        buttonPath: NOTIFICATION_LINKS.learnerDashboard(),
+      };
+    case 'started':
+      return {
+        subject: `Live now: ${sessionTitle}`,
+        heading: 'Your live session has started',
+        sentence: `${sessionTitle} for ${courseName} is live now. Join the room to catch it from the start.`,
+        buttonLabel: 'Join now',
+        buttonPath: NOTIFICATION_LINKS.liveRoom(sessionId),
+      };
+    case 'rescheduled':
+      return {
+        subject: `Rescheduled: ${sessionTitle}`,
+        heading: 'A live session was moved',
+        sentence: `${sessionTitle} for ${courseName} has moved${
+          options.previousScheduledAt
+            ? ` from ${formatLagosTime(options.previousScheduledAt)}`
+            : ''
+        } to ${when} (Lagos time).`,
+        buttonLabel: 'Open program',
+        buttonPath: NOTIFICATION_LINKS.program(courseId),
+      };
+    case 'cancelled':
+      return {
+        subject: `Cancelled: ${sessionTitle}`,
+        heading: 'A live session was cancelled',
+        sentence: `${sessionTitle} for ${courseName}, planned for ${when} (Lagos time), has been cancelled by the host.`,
+        buttonLabel: 'Open program',
+        buttonPath: NOTIFICATION_LINKS.program(courseId),
+      };
+  }
+};
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -376,35 +455,31 @@ export class NotificationService {
     });
   }
 
-  async sendLiveSessionScheduledEmails({
-    userIds,
-    sessionTitle,
-    courseId,
-    courseName,
-    scheduledAt,
-  }: LiveSessionEmailOptions): Promise<void> {
-    const recipients = await this.emailRecipients(userIds, 'emailLiveSessions');
-    const programUrl = `${process.env.APP_URL || 'http://localhost:3000'}/programs/${courseId}`;
-    const when = scheduledAt.toLocaleString('en-GB', {
-      dateStyle: 'full',
-      timeStyle: 'short',
-      timeZone: LIVE_SESSION_EMAIL_TIME_ZONE,
-    });
+  /** One template for every live-session email: scheduled, 30-minute reminder, and started. */
+  async sendLiveSessionEmails(
+    kind: LiveSessionEmailKind,
+    options: LiveSessionEmailOptions,
+  ): Promise<void> {
+    const recipients = await this.emailRecipients(
+      options.userIds,
+      'emailLiveSessions',
+    );
+    const when = formatLagosTime(options.scheduledAt);
+    const copy = liveSessionEmailCopy(kind, options, when);
 
     await Promise.all(
       recipients.map((recipient) =>
         this.sendEmailQuietly({
           to: recipient.email,
-          subject: `New live session: ${sessionTitle}`,
+          subject: copy.subject,
           html: this.renderEmailLayout(
-            `${sessionTitle} is scheduled for ${when}.`,
+            escapeHtml(copy.sentence),
             `
-              <h1 style="color: #18181b; font-size: 20px; font-weight: 800; margin: 0 0 12px;">A live session was scheduled</h1>
+              <h1 style="color: #18181b; font-size: 20px; font-weight: 800; margin: 0 0 12px;">${escapeHtml(copy.heading)}</h1>
               <p style="color: #52525b; font-size: 15px; line-height: 1.6; margin: 0;">
-                Hi ${escapeHtml(recipient.name)}, <strong>${escapeHtml(sessionTitle)}</strong> for
-                ${escapeHtml(courseName)} is on <strong>${when}</strong> (Lagos time).
+                Hi ${escapeHtml(recipient.name)}, ${escapeHtml(copy.sentence)}
               </p>
-              ${this.emailButton(programUrl, 'Open program')}
+              ${this.emailButton(`${APP_URL()}${copy.buttonPath}`, copy.buttonLabel)}
             `,
           ),
         }),

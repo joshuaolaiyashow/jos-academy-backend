@@ -21,6 +21,8 @@ import { randomBytes } from 'crypto';
 
 // Conversion rate constant: 10 credits = 100 Naira (1 credit = 10 Naira)
 export const NAIRA_PER_CREDIT = 10;
+/** Smallest top-up a learner can buy. */
+export const MIN_CREDIT_PURCHASE = 50;
 
 // Program pricing: tuition is set in USD and converted at 100 credits = $10.
 export const CREDITS_PER_USD = 10;

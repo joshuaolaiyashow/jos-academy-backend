@@ -15,6 +15,13 @@ async function bootstrap() {
   // One hop: the AWS load balancer. Without this req.ip is the ALB's address, so
   // audit entries would record the balancer instead of the real client.
   app.set('trust proxy', 1);
+  // LiveKit webhooks are sent as application/webhook+json; parsed like JSON so
+  // req.rawBody is kept for signature verification. application/json must stay
+  // in the list: registering any json parser here makes Nest skip its default
+  // one, which would leave every normal request body empty.
+  app.useBodyParser('json', {
+    type: ['application/json', 'application/webhook+json'],
+  });
 
   // Enable global validation pipe for DTO validation
   app.useGlobalPipes(

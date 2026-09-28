@@ -3,11 +3,17 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
-import { CourseProjectStatus } from '../generated/prisma/client';
+import {
+  CourseProjectStatus,
+  type CourseProject,
+} from '../generated/prisma/client';
+import { MediaService } from '../media/media.service';
 import {
   CourseAccessService,
   type CourseActor,
@@ -16,6 +22,11 @@ import { ENROLLMENT_ACCESS_STATUSES } from '../enrollment/enrollment-access';
 import { CreateCourseProjectDto } from './dto/create-course-project.dto';
 import { SubmitMilestoneDto } from './dto/submit-milestone.dto';
 import { UpdateCourseProjectDto } from './dto/update-course-project.dto';
+import { RequestSubmissionUploadDto } from './dto/request-submission-upload.dto';
+import {
+  PROJECT_SUBMISSION_RULES,
+  projectSubmissionPrefix,
+} from './project-submission.rules';
 import { NOTIFICATION_LINKS } from '../notification/notification-links';
 
 type ProjectActor = CourseActor & { name: string };
@@ -24,10 +35,13 @@ const USER_SUMMARY = { select: { id: true, name: true, email: true } } as const;
 
 @Injectable()
 export class CourseProjectService {
+  private readonly logger = new Logger(CourseProjectService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly courseAccess: CourseAccessService,
     private readonly notifications: NotificationService,
+    private readonly media: MediaService,
   ) {}
 
   private async findOwnedProject(user: CourseActor, projectId: string) {
@@ -52,7 +66,7 @@ export class CourseProjectService {
         title: dto.title.trim(),
         description: dto.description.trim(),
         milestones: dto.milestones.map((milestone) => milestone.trim()),
-        demoDay: dto.demoDay ? new Date(dto.demoDay) : null,
+        submissionType: dto.submissionType,
       },
     });
   }
@@ -68,10 +82,7 @@ export class CourseProjectService {
       data: {
         title: dto.title?.trim(),
         description: dto.description?.trim(),
-        demoDay:
-          dto.demoDay === undefined
-            ? undefined
-            : dto.demoDay && new Date(dto.demoDay),
+        submissionType: dto.submissionType,
         status: dto.status,
       },
     });
@@ -138,6 +149,8 @@ export class CourseProjectService {
           select: {
             milestoneIndex: true,
             url: true,
+            fileUrl: true,
+            fileName: true,
             notes: true,
             submittedAt: true,
           },
@@ -155,13 +168,8 @@ export class CourseProjectService {
     };
   }
 
-  /** Milestones are submitted in order; resubmitting an earlier one is allowed. */
-  async submitMilestone(
-    user: ProjectActor,
-    projectId: string,
-    milestoneIndex: number,
-    dto: SubmitMilestoneDto,
-  ) {
+  /** A project the learner can still hand work in for. */
+  private async findOpenProject(user: CourseActor, projectId: string) {
     const project = await this.prisma.courseProject.findUnique({
       where: { id: projectId },
       include: { course: { select: { creatorId: true, name: true } } },
@@ -174,13 +182,79 @@ export class CourseProjectService {
       project.courseId,
     );
     this.courseAccess.assertAcceptsCoursework(access);
+    if (project.status === CourseProjectStatus.COMPLETED) {
+      throw new ConflictException('This project is closed for submissions.');
+    }
+    return project;
+  }
+
+  /** Presigned PUT for a milestone file — the bytes go straight to storage. */
+  async requestSubmissionUpload(
+    user: CourseActor,
+    projectId: string,
+    dto: RequestSubmissionUploadDto,
+  ) {
+    const project = await this.findOpenProject(user, projectId);
+    const rule = PROJECT_SUBMISSION_RULES[project.submissionType];
+    if (!rule.fileTypes.has(dto.contentType)) {
+      throw new BadRequestException(rule.fileTypeHint);
+    }
+    try {
+      return await this.media.requestUploadUrl(
+        dto,
+        projectSubmissionPrefix(projectId, user.id),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Project upload URL failed for ${projectId}: ${(error as Error).message}`,
+      );
+      throw new InternalServerErrorException(
+        'Could not start the upload. Please try again.',
+      );
+    }
+  }
+
+  /** Exactly one of a link or an upload, in a form this project's type accepts. */
+  private resolveSubmittedWork(
+    project: CourseProject,
+    userId: string,
+    dto: SubmitMilestoneDto,
+  ) {
+    const rule = PROJECT_SUBMISSION_RULES[project.submissionType];
+    const hasFile = Boolean(dto.fileUrl);
+    if (hasFile === Boolean(dto.url)) {
+      throw new BadRequestException(
+        'Submit either a link or an uploaded file.',
+      );
+    }
+    if (!hasFile) {
+      if (!rule.allowsLink) {
+        throw new BadRequestException(rule.fileTypeHint);
+      }
+      return { url: dto.url, fileUrl: null, fileName: null };
+    }
+    const prefix = `/${projectSubmissionPrefix(project.id, userId)}/`;
+    if (!dto.fileName || !new URL(dto.fileUrl!).pathname.includes(prefix)) {
+      throw new BadRequestException(
+        'That file was not uploaded for this project.',
+      );
+    }
+    return { url: null, fileUrl: dto.fileUrl, fileName: dto.fileName };
+  }
+
+  /** Milestones are submitted in order; resubmitting an earlier one is allowed. */
+  async submitMilestone(
+    user: ProjectActor,
+    projectId: string,
+    milestoneIndex: number,
+    dto: SubmitMilestoneDto,
+  ) {
+    const project = await this.findOpenProject(user, projectId);
 
     if (milestoneIndex < 0 || milestoneIndex >= project.milestones.length) {
       throw new BadRequestException('That milestone does not exist.');
     }
-    if (project.status === CourseProjectStatus.COMPLETED) {
-      throw new ConflictException('This project is closed for submissions.');
-    }
+    const work = this.resolveSubmittedWork(project, user.id, dto);
     if (milestoneIndex > 0) {
       const previous = await this.prisma.projectMilestoneSubmission.findUnique({
         where: {
@@ -211,10 +285,10 @@ export class CourseProjectService {
         projectId,
         userId: user.id,
         milestoneIndex,
-        url: dto.url,
+        ...work,
         notes,
       },
-      update: { url: dto.url, notes, submittedAt: new Date() },
+      update: { ...work, notes, submittedAt: new Date() },
     });
 
     const creatorId = project.course.creatorId;

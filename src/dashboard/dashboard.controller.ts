@@ -53,7 +53,6 @@ export class DashboardController {
             id: 'd4e5f6a7-b8c9-0123-defa-234567890123',
             title: 'Introduction to Python for AI',
             type: 'Lecture',
-            platform: 'Zoom',
             scheduledAt: '2025-10-28T09:00:00.000Z',
             durationMins: 60,
             status: 'SCHEDULED',

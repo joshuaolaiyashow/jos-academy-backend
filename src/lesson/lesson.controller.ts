@@ -1,4 +1,6 @@
 import {
+  HttpStatus,
+  HttpCode,
   Body,
   Controller,
   Delete,
@@ -22,6 +24,7 @@ import {
 import { LessonService } from './lesson.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { RecordEngagementDto } from './dto/record-engagement.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -172,6 +175,35 @@ export class LessonController {
   })
   async getLessonById(@Param('id') id: string, @Req() req: any) {
     return this.lessonService.getLessonById(id, req.user);
+  }
+
+  @Get(':id/engagement')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      "The learner's watch/read time on a lesson and how much is needed to complete it",
+  })
+  @ApiParam({ name: 'id', description: 'Lesson ID (UUID)' })
+  async getEngagement(@Param('id') id: string, @Req() req: any) {
+    return this.lessonService.getEngagement(req.user.id, id);
+  }
+
+  @Post(':id/engagement')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Heartbeat: credit seconds actually spent watching or reading a lesson',
+  })
+  @ApiParam({ name: 'id', description: 'Lesson ID (UUID)' })
+  @HttpCode(HttpStatus.OK)
+  async recordEngagement(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() dto: RecordEngagementDto,
+  ) {
+    return this.lessonService.recordEngagement(req.user.id, id, dto);
   }
 
   @Post(':id/complete')

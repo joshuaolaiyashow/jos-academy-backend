@@ -12,6 +12,7 @@ import {
   UserRole,
 } from '../src/generated/prisma/client';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { LiveSessionNotifier } from '../src/live-session/live-session-notifier.service';
 import {
   authHeader,
   createE2eApp,
@@ -206,6 +207,47 @@ describe('Academy features (e2e)', () => {
       });
     });
 
+    it('lets the course creator read the lesson threads without enrolling', async () => {
+      const response = await http()
+        .get(`/lessons/${lessonIds[0]}/discussions`)
+        .set(auth(creator))
+        .expect(200);
+      expect(
+        response.body.threads.some(
+          (entry: { id: string }) => entry.id === threadId,
+        ),
+      ).toBe(true);
+    });
+
+    it('lists the question on the creator dashboard as answered', async () => {
+      const response = await http()
+        .get('/creator-dashboard/discussions')
+        .set(auth(creator))
+        .expect(200);
+      const thread = response.body.threads.find(
+        (entry: { id: string }) => entry.id === threadId,
+      );
+      expect(thread).toMatchObject({
+        isAnswered: true,
+        lesson: { id: lessonIds[0] },
+      });
+    });
+
+    it("keeps other creators' questions off their dashboard", async () => {
+      const response = await http()
+        .get('/creator-dashboard/discussions')
+        .set(auth(otherCreator))
+        .expect(200);
+      expect(response.body.threads).toHaveLength(0);
+    });
+
+    it('forbids learners from the creator discussions list', async () => {
+      await http()
+        .get('/creator-dashboard/discussions')
+        .set(auth(learner))
+        .expect(403);
+    });
+
     it('rejects a parent from a different lesson', async () => {
       await http()
         .post(`/lessons/${lessonIds[1]}/discussions`)
@@ -244,6 +286,16 @@ describe('Academy features (e2e)', () => {
     });
 
     it('issues exactly one certificate once every lesson is complete', async () => {
+      // Completion now needs real watch/read time; record it as if the learner read both lessons.
+      await Promise.all(
+        lessonIds.slice(0, 2).map((lessonId) =>
+          prisma.lessonProgress.upsert({
+            where: { userId_lessonId: { userId: learner.id, lessonId } },
+            create: { userId: learner.id, lessonId, engagedSeconds: 600 },
+            update: { engagedSeconds: 600 },
+          }),
+        ),
+      );
       await http()
         .post(`/lessons/${lessonIds[0]}/complete`)
         .set(auth(learner))
@@ -342,19 +394,25 @@ describe('Academy features (e2e)', () => {
   describe('live sessions', () => {
     let sessionId: string;
 
-    it('rejects a non-https meeting link', async () => {
+    const scheduleBody = (overrides: Record<string, unknown> = {}) => ({
+      title: 'Sensors Q&A',
+      type: 'QandA',
+      scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+      durationMins: 60,
+      courseId,
+      ...overrides,
+    });
+
+    it('rejects the removed platform and meeting-link fields', async () => {
       await http()
         .post('/live-sessions')
         .set(auth(creator))
-        .send({
-          title: 'Sensors Q&A',
-          type: 'QandA',
-          platform: 'Zoom',
-          meetingLink: 'javascript:alert(1)',
-          scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
-          durationMins: 60,
-          courseId,
-        })
+        .send(scheduleBody({ platform: 'Zoom' }))
+        .expect(400);
+      await http()
+        .post('/live-sessions')
+        .set(auth(creator))
+        .send(scheduleBody({ meetingLink: 'https://zoom.us/j/1' }))
         .expect(400);
     });
 
@@ -362,35 +420,11 @@ describe('Academy features (e2e)', () => {
       await http()
         .post('/live-sessions')
         .set(auth(creator))
-        .send({
-          title: 'Hijack',
-          type: 'Lecture',
-          platform: 'Zoom',
-          meetingLink: 'https://zoom.us/j/1',
-          scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
-          durationMins: 60,
-          courseId: otherCourseId,
-        })
+        .send(scheduleBody({ title: 'Hijack', courseId: otherCourseId }))
         .expect(403);
     });
 
-    it('lets the owner schedule a session on a live program', async () => {
-      await http()
-        .post('/live-sessions')
-        .set(auth(creator))
-        .send({
-          title: 'Office hours',
-          type: 'QandA',
-          platform: 'Zoom',
-          scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
-          durationMins: 60,
-          courseId,
-        })
-        .expect(201);
-    });
-
-    it('lets the owner schedule a session with a real meeting link', async () => {
-      // Sessions are scheduled while the program is still editable, before approval.
+    it('lets the owner schedule a session while the program is editable', async () => {
       await prisma.course.update({
         where: { id: courseId },
         data: { status: CourseStatus.DRAFT },
@@ -398,46 +432,37 @@ describe('Academy features (e2e)', () => {
       const response = await http()
         .post('/live-sessions')
         .set(auth(creator))
-        .send({
-          title: 'Sensors Q&A',
-          type: 'QandA',
-          platform: 'Zoom',
-          meetingLink: 'https://zoom.us/j/1234567890',
-          scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
-          durationMins: 60,
-          courseId,
-        })
+        .send(scheduleBody())
         .expect(201);
       sessionId = response.body.session.id;
-      expect(response.body.session.meetingLink).toBe(
-        'https://zoom.us/j/1234567890',
-      );
       await prisma.course.update({
         where: { id: courseId },
         data: { status: CourseStatus.ACTIVE },
       });
     });
 
-    it('lets the owner update the meeting link', async () => {
+    it('lets only the owner set the recording link', async () => {
       const response = await http()
         .patch(`/live-sessions/${sessionId}`)
         .set(auth(creator))
-        .send({ meetingLink: 'https://zoom.us/j/999' })
+        .send({ recordingUrl: 'https://youtu.be/abc123' })
         .expect(200);
-      expect(response.body.session.meetingLink).toBe('https://zoom.us/j/999');
+      expect(response.body.session.recordingUrl).toBe(
+        'https://youtu.be/abc123',
+      );
 
       await http()
         .patch(`/live-sessions/${sessionId}`)
         .set(auth(otherCreator))
-        .send({ meetingLink: 'https://zoom.us/j/evil' })
+        .send({ recordingUrl: 'https://youtu.be/evil' })
         .expect(403);
     });
 
-    it('never exposes meeting links or attendees publicly', async () => {
+    it('never exposes recordings or attendees publicly', async () => {
       const list = await http()
         .get(`/live-sessions?courseId=${courseId}`)
         .expect(200);
-      expect(JSON.stringify(list.body)).not.toContain('zoom.us');
+      expect(JSON.stringify(list.body)).not.toContain('youtu.be');
 
       await http().get(`/live-sessions/${sessionId}`).expect(401);
       await http()
@@ -446,7 +471,7 @@ describe('Academy features (e2e)', () => {
         .expect(403);
     });
 
-    it('lists the session on the learner dashboard without the link', async () => {
+    it('lists the session on the learner dashboard', async () => {
       const response = await http()
         .get('/dashboard')
         .set(auth(learner))
@@ -455,16 +480,9 @@ describe('Academy features (e2e)', () => {
         (entry: { id: string }) => entry.id === sessionId,
       );
       expect(session).toBeDefined();
-      expect(session).not.toHaveProperty('meetingLink');
-
-      const explore = await http()
-        .get(`/explore/${courseId}`)
-        .set(auth(learner))
-        .expect(200);
-      expect(JSON.stringify(explore.body)).not.toContain('zoom.us');
     });
 
-    it('only lets enrolled learners join once the session is live', async () => {
+    it('only hands out room tokens to members once the session is live', async () => {
       await http()
         .post(`/live-sessions/${sessionId}/join`)
         .set(auth(learner))
@@ -485,17 +503,33 @@ describe('Academy features (e2e)', () => {
         .post(`/live-sessions/${sessionId}/join`)
         .set(auth(learner))
         .expect(201);
+      expect(joined.body).toMatchObject({
+        serverUrl: 'ws://127.0.0.1:1',
+        roomName: `session-${sessionId}`,
+        token: expect.any(String),
+        sessionTitle: 'Sensors Q&A',
+        courseId,
+        isHost: false,
+      });
 
-      const dashboard = await http()
-        .get('/dashboard')
-        .set(auth(learner))
-        .expect(200);
-      expect(
-        dashboard.body.upcomingLiveSessions.map(
-          (entry: { id: string }) => entry.id,
-        ),
-      ).toContain(sessionId);
-      expect(joined.body.meetingLink).toBe('https://zoom.us/j/999');
+      const hostJoin = await http()
+        .post(`/live-sessions/${sessionId}/join`)
+        .set(auth(creator))
+        .expect(201);
+      const hostClaims = JSON.parse(
+        Buffer.from(hostJoin.body.token.split('.')[1], 'base64url').toString(),
+      );
+      expect(hostClaims.video).toMatchObject({ roomAdmin: true });
+      expect(hostJoin.body.isHost).toBe(true);
+
+      const startedNotice = await prisma.notification.findFirst({
+        where: {
+          userId: learner.id,
+          type: 'live-session',
+          link: `/live/${sessionId}`,
+        },
+      });
+      expect(startedNotice?.title).toBe('Live now: Sensors Q&A');
 
       const attendance = await http()
         .get(`/live-sessions/${sessionId}/attendance`)
@@ -504,6 +538,237 @@ describe('Academy features (e2e)', () => {
       expect(attendance.body.attendance).toEqual([
         expect.objectContaining({ userId: learner.id, status: 'ATTENDED' }),
       ]);
+    });
+
+    it('sends the 30-minute reminder exactly once', async () => {
+      const soon = await prisma.liveSession.create({
+        data: {
+          title: 'Reminder check',
+          type: 'Lecture',
+          scheduledAt: new Date(Date.now() + 10 * 60_000),
+          durationMins: 30,
+          courseId,
+          creatorId: creator.id,
+        },
+      });
+      const notifier = app.get(LiveSessionNotifier);
+      await notifier.sendDueReminders();
+      await notifier.sendDueReminders();
+
+      const reminders = await prisma.notification.findMany({
+        where: {
+          userId: learner.id,
+          type: 'live-session',
+          title: { contains: 'Reminder check' },
+        },
+      });
+      expect(reminders).toHaveLength(1);
+      expect(reminders[0].title).toMatch(
+        /^Starting in \d+ min: Reminder check$/,
+      );
+      const claimed = await prisma.liveSession.findUniqueOrThrow({
+        where: { id: soon.id },
+      });
+      expect(claimed.reminderSentAt).not.toBeNull();
+    });
+
+    it('reschedules a session, re-arms its reminder and tells learners', async () => {
+      const created = await http()
+        .post('/live-sessions')
+        .set(auth(creator))
+        .send(scheduleBody({ title: 'Move me' }))
+        .expect(201);
+      const id = created.body.session.id as string;
+      await prisma.liveSession.update({
+        where: { id },
+        data: { reminderSentAt: new Date() },
+      });
+
+      await http()
+        .patch(`/live-sessions/${id}`)
+        .set(auth(creator))
+        .send({ scheduledAt: new Date(Date.now() - 60_000).toISOString() })
+        .expect(400);
+      await http()
+        .patch(`/live-sessions/${id}`)
+        .set(auth(otherCreator))
+        .send({ title: 'Hijacked' })
+        .expect(403);
+
+      const nextStart = new Date(Date.now() + 2 * 86_400_000).toISOString();
+      const moved = await http()
+        .patch(`/live-sessions/${id}`)
+        .set(auth(creator))
+        .send({ scheduledAt: nextStart, durationMins: 45, title: 'Moved' })
+        .expect(200);
+      expect(moved.body.session).toMatchObject({
+        title: 'Moved',
+        durationMins: 45,
+        scheduledAt: nextStart,
+        reminderSentAt: null,
+      });
+      const notice = await prisma.notification.findFirst({
+        where: { userId: learner.id, title: 'Rescheduled: Moved' },
+      });
+      expect(notice).not.toBeNull();
+    });
+
+    it('cancels only sessions that have not started, and tells learners', async () => {
+      const created = await http()
+        .post('/live-sessions')
+        .set(auth(creator))
+        .send(scheduleBody({ title: 'Call it off' }))
+        .expect(201);
+      const id = created.body.session.id as string;
+
+      await http()
+        .patch(`/live-sessions/${id}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.CANCELLED })
+        .expect(200);
+      const notice = await prisma.notification.findFirst({
+        where: { userId: learner.id, title: 'Cancelled: Call it off' },
+      });
+      expect(notice).not.toBeNull();
+
+      await http()
+        .patch(`/live-sessions/${id}`)
+        .set(auth(creator))
+        .send({ title: 'Too late' })
+        .expect(409);
+      const dashboard = await http()
+        .get('/dashboard')
+        .set(auth(learner))
+        .expect(200);
+      expect(
+        dashboard.body.upcomingLiveSessions.map(
+          (entry: { id: string }) => entry.id,
+        ),
+      ).not.toContain(id);
+    });
+
+    it('deletes only sessions nobody registered for', async () => {
+      const created = await http()
+        .post('/live-sessions')
+        .set(auth(creator))
+        .send(scheduleBody({ title: 'Duplicate' }))
+        .expect(201);
+      const id = created.body.session.id as string;
+
+      await http()
+        .post(`/live-sessions/${id}/register`)
+        .set(auth(learner))
+        .expect(201);
+      await http()
+        .delete(`/live-sessions/${id}`)
+        .set(auth(creator))
+        .expect(409);
+
+      await prisma.sessionAttendance.deleteMany({ where: { sessionId: id } });
+      await http()
+        .delete(`/live-sessions/${id}`)
+        .set(auth(otherCreator))
+        .expect(403);
+      await http()
+        .delete(`/live-sessions/${id}`)
+        .set(auth(creator))
+        .expect(200);
+      expect(await prisma.liveSession.findUnique({ where: { id } })).toBeNull();
+    });
+
+    it('does not cancel a session that is already live', async () => {
+      await http()
+        .patch(`/live-sessions/${sessionId}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.CANCELLED })
+        .expect(409);
+    });
+
+    it('opens a waiting room learners can join, then times the live class', async () => {
+      const created = await http()
+        .post('/live-sessions')
+        .set(auth(creator))
+        .send(scheduleBody({ title: 'Waiting room' }))
+        .expect(201);
+      const id = created.body.session.id as string;
+
+      await http()
+        .patch(`/live-sessions/${id}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.ENDED })
+        .expect(200);
+      const fresh = await http()
+        .post('/live-sessions')
+        .set(auth(creator))
+        .send(scheduleBody({ title: 'Waiting room 2' }))
+        .expect(201);
+      const waitingId = fresh.body.session.id as string;
+
+      await http()
+        .patch(`/live-sessions/${waitingId}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.WAITING })
+        .expect(200);
+      await http()
+        .patch(`/live-sessions/${waitingId}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.WAITING })
+        .expect(409);
+
+      const joined = await http()
+        .post(`/live-sessions/${waitingId}/join`)
+        .set(auth(learner))
+        .expect(201);
+      expect(joined.body).toMatchObject({
+        status: 'WAITING',
+        startedAt: null,
+        enrolledCount: expect.any(Number),
+      });
+      expect(joined.body.openedAt).not.toBeNull();
+
+      await http()
+        .patch(`/live-sessions/${waitingId}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.LIVE })
+        .expect(200);
+      await http()
+        .patch(`/live-sessions/${waitingId}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.ENDED })
+        .expect(200);
+
+      const report = await http()
+        .get(`/live-sessions/${waitingId}/attendance`)
+        .set(auth(creator))
+        .expect(200);
+      expect(report.body.startedAt).not.toBeNull();
+      expect(report.body.endedAt).not.toBeNull();
+      expect(report.body.enrolledCount).toBeGreaterThan(0);
+      // Joined from the waiting room, so the "started" notice skipped them.
+      const startedNotice = await prisma.notification.findFirst({
+        where: { userId: learner.id, title: 'Live now: Waiting room 2' },
+      });
+      expect(startedNotice).toBeNull();
+    });
+
+    it('rejects unsigned LiveKit webhooks', async () => {
+      await http()
+        .post('/live-sessions/livekit/webhook')
+        .set('Content-Type', 'application/webhook+json')
+        .send(JSON.stringify({ event: 'participant_left' }))
+        .expect(401);
+    });
+
+    it('closes open attendance when the host ends the session', async () => {
+      await http()
+        .patch(`/live-sessions/${sessionId}/status`)
+        .set(auth(creator))
+        .send({ status: LiveSessionStatus.ENDED })
+        .expect(200);
+      const row = await prisma.sessionAttendance.findUniqueOrThrow({
+        where: { sessionId_userId: { sessionId, userId: learner.id } },
+      });
+      expect(row.leftAt).not.toBeNull();
     });
   });
 

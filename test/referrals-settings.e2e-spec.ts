@@ -136,7 +136,8 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
     it('gives the referee 5% off their first program purchase, once', async () => {
       await prisma.user.update({
         where: { id: refereeId },
-        data: { credits: 5000 },
+        // Enough for one discounted purchase plus one at full price.
+        data: { credits: 200_000 },
       });
       const header = { Authorization: `Bearer ${refereeToken}` };
 
@@ -146,7 +147,7 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
         isAvailable: true,
       });
 
-      // seedCourse: ₦10,000 tuition -> 1,000 credits, so 5% is 50.
+      // seedCourse: $10,000 tuition at 10 credits per dollar -> 100,000 credits, so 5% is 5,000.
       const first = await seedCourse(app, referrer.id, 1);
       const purchase = await http()
         .post('/enrollments/purchase')
@@ -154,9 +155,9 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
         .send({ courseId: first.id, type: 'FULL_COURSE' })
         .expect(201);
       expect(purchase.body).toMatchObject({
-        originalCredits: 1000,
-        referralDiscountCredits: 50,
-        creditsDeducted: 950,
+        originalCredits: 100_000,
+        referralDiscountCredits: 5_000,
+        creditsDeducted: 95_000,
       });
 
       const second = await seedCourse(app, referrer.id, 1);
@@ -167,7 +168,7 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
         .expect(201);
       expect(again.body).toMatchObject({
         referralDiscountCredits: 0,
-        creditsDeducted: 1000,
+        creditsDeducted: 100_000,
       });
 
       const after = await http().get('/referrals/me').set(header).expect(200);
@@ -225,8 +226,6 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
         .send({
           title: 'Kickoff',
           type: 'Lecture',
-          platform: 'Zoom',
-          meetingLink: 'https://zoom.us/j/1',
           scheduledAt: new Date(Date.now() + 86_400_000).toISOString(),
           durationMins: 60,
           courseId: course.id,

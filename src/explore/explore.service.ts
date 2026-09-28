@@ -123,8 +123,8 @@ export class ExploreService {
 
     const upcomingSessions = await this.prisma.liveSession.findMany({
       where: { courseId: id, ...UPCOMING_OR_LIVE_SESSION_FILTER() },
-      // Meeting links are handed out only by POST /live-sessions/:id/join.
-      omit: { meetingLink: true },
+      // Recordings are for enrolled learners, via GET /live-sessions/course/:id/recordings.
+      omit: { recordingUrl: true },
       orderBy: { scheduledAt: 'asc' },
     });
 

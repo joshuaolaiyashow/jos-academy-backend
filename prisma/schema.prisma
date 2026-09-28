@@ -172,16 +172,18 @@ model Modules {
 }
 
 model Lesson {
-  id          String            @id @default(uuid())
-  title       String
-  description String?
-  contentType LessonContentType
-  videoUrl    String?
-  content     String?
+  id           String            @id @default(uuid())
+  title        String
+  description  String?
+  contentType  LessonContentType
+  videoUrl     String?
+  content      String?
   // Only set for code lessons; drives the editor's highlighting and formatter.
   codeLanguage String?
-  duration    Int?
-  order       Int               @default(0)
+  duration     Int?
+  /// Real video length reported by the first learner's player; drives the 80%-watched rule.
+  videoSeconds Int?
+  order        Int               @default(0)
 
   videoProcessingStatus LessonVideoStatus?
   videoProcessingError  String?
@@ -199,14 +201,17 @@ model Lesson {
 }
 
 model LessonProgress {
-  id          String    @id @default(uuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lessonId    String
-  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  completed   Boolean   @default(false)
-  completedAt DateTime?
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId        String
+  lesson          Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completed       Boolean   @default(false)
+  completedAt     DateTime?
+  /// Seconds actually spent watching/reading, as credited by the engagement heartbeat.
+  engagedSeconds  Int       @default(0)
+  lastHeartbeatAt DateTime?
+  updatedAt       DateTime  @updatedAt
 
   @@unique([userId, lessonId])
   @@index([userId])
@@ -214,16 +219,20 @@ model LessonProgress {
 }
 
 model LiveSession {
-  id           String            @id @default(uuid())
-  title        String
-  type         SessionType
-  platform     SessionPlatform
-  meetingLink  String?
+  id             String            @id @default(uuid())
+  title          String
+  type           SessionType
   /// Replay link the host adds after the session; shown to the cohort's learners, including rewatch buyers.
-  recordingUrl String?
-  scheduledAt  DateTime
-  durationMins Int
-  status       LiveSessionStatus @default(SCHEDULED)
+  recordingUrl   String?
+  scheduledAt    DateTime
+  durationMins   Int
+  status         LiveSessionStatus @default(SCHEDULED)
+  /// Set when the 30-minute reminder goes out; claimed atomically so it's sent once across API instances.
+  reminderSentAt DateTime?
+  /// When the host opened the waiting room, went live, and ended the session.
+  openedAt       DateTime?
+  startedAt      DateTime?
+  endedAt        DateTime?
 
   courseId  String
   course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -322,6 +331,14 @@ enum CourseProjectStatus {
   ARCHIVED
 }
 
+/// What learners hand in for each milestone: a recording upload, code (link or
+/// ZIP), or a document (file or link).
+enum ProjectSubmissionType {
+  RECORDING
+  CODE
+  DOCUMENT
+}
+
 model CourseProject {
   id          String              @id @default(uuid())
   courseId    String
@@ -329,9 +346,9 @@ model CourseProject {
   title       String
   description String              @db.Text
   /// Ordered milestone labels; learners submit them in order.
-  milestones  String[]
-  demoDay     DateTime?
-  status      CourseProjectStatus @default(ACTIVE)
+  milestones     String[]
+  submissionType ProjectSubmissionType @default(CODE)
+  status         CourseProjectStatus   @default(ACTIVE)
 
   submissions ProjectMilestoneSubmission[]
 
@@ -348,7 +365,10 @@ model ProjectMilestoneSubmission {
   userId         String
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   milestoneIndex Int
-  url            String
+  /// Set when the learner shared a link; otherwise fileUrl holds the upload.
+  url            String?
+  fileUrl        String?
+  fileName       String?
   notes          String?       @db.Text
   submittedAt    DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -551,14 +571,10 @@ enum SessionType {
   QandA
 }
 
-enum SessionPlatform {
-  Zoom
-  GoogleMeet
-  MicrosoftTeams
-}
-
 enum LiveSessionStatus {
   SCHEDULED
+  /// Host opened the waiting room: learners can join, the class hasn't started.
+  WAITING
   LIVE
   ENDED
   CANCELLED

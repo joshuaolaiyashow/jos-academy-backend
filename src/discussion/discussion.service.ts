@@ -82,6 +82,45 @@ export class DiscussionService {
     };
   }
 
+  /** Every question asked across the programs this instructor owns, newest first. */
+  async listForCreator(creatorId: string) {
+    const threads = await this.prisma.lessonDiscussion.findMany({
+      where: { parentId: null, lesson: { module: { course: { creatorId } } } },
+      orderBy: { createdAt: 'desc' },
+      take: THREADS_PAGE_SIZE,
+      include: {
+        user: AUTHOR_SELECT,
+        lesson: {
+          select: {
+            id: true,
+            title: true,
+            module: {
+              select: { course: { select: { id: true, name: true } } },
+            },
+          },
+        },
+        replies: {
+          orderBy: { createdAt: 'asc' },
+          include: { user: AUTHOR_SELECT },
+        },
+      },
+    });
+
+    return {
+      threads: threads.map((thread) => ({
+        ...this.toEntry(thread, creatorId),
+        replies: thread.replies.map((reply) => this.toEntry(reply, creatorId)),
+        isAnswered: thread.replies.some((reply) => reply.user.id === creatorId),
+        lesson: {
+          id: thread.lesson.id,
+          title: thread.lesson.title,
+          programId: thread.lesson.module.course.id,
+          programName: thread.lesson.module.course.name,
+        },
+      })),
+    };
+  }
+
   async post(
     user: DiscussionActor,
     lessonId: string,
@@ -119,7 +158,7 @@ export class DiscussionService {
         `New question from ${user.name}`,
         `On "${lesson.title}": ${preview(dto.body)}`,
         QUESTION_NOTIFICATION_TYPE,
-        NOTIFICATION_LINKS.lesson(lesson.module.courseId, lessonId),
+        NOTIFICATION_LINKS.creatorLesson(lesson.module.courseId, lessonId),
       );
     }
 

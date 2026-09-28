@@ -56,7 +56,11 @@ export class CreatorDashboardService {
           where: {
             creatorId,
             status: {
-              in: [LiveSessionStatus.SCHEDULED, LiveSessionStatus.LIVE],
+              in: [
+                LiveSessionStatus.SCHEDULED,
+                LiveSessionStatus.WAITING,
+                LiveSessionStatus.LIVE,
+              ],
             },
           },
         }),

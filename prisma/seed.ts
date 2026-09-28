@@ -6,7 +6,6 @@ const {
   TargetLevel,
   LessonContentType,
   SessionType,
-  SessionPlatform,
 } = require('../src/generated/prisma/client');
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -167,7 +166,6 @@ async function main() {
         data: {
           title: session.title,
           type: SessionType[session.type],
-          platform: SessionPlatform[session.platform],
           scheduledAt,
           durationMins: session.durationMins,
           courseId,

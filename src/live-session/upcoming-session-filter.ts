@@ -2,7 +2,7 @@ import { LiveSessionStatus, Prisma } from '../generated/prisma/client';
 
 /**
  * Sessions a learner should still see: scheduled ones that haven't started,
- * plus any the host has taken live (even though their start time has passed).
+ * plus any whose waiting room is open or that are live (even past their start time).
  */
 export const UPCOMING_OR_LIVE_SESSION_FILTER =
   (): Prisma.LiveSessionWhereInput => ({
@@ -11,6 +11,8 @@ export const UPCOMING_OR_LIVE_SESSION_FILTER =
         status: LiveSessionStatus.SCHEDULED,
         scheduledAt: { gte: new Date() },
       },
-      { status: LiveSessionStatus.LIVE },
+      {
+        status: { in: [LiveSessionStatus.WAITING, LiveSessionStatus.LIVE] },
+      },
     ],
   });

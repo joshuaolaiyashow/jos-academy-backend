@@ -1,14 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
-  ValidateIf,
 } from 'class-validator';
-import { CourseProjectStatus } from '../../generated/prisma/client';
+import {
+  CourseProjectStatus,
+  ProjectSubmissionType,
+} from '../../generated/prisma/client';
 
 export class UpdateCourseProjectDto {
   @ApiPropertyOptional()
@@ -25,11 +26,10 @@ export class UpdateCourseProjectDto {
   @MaxLength(10_000)
   description?: string;
 
-  @ApiPropertyOptional({ nullable: true, description: 'null clears demo day' })
+  @ApiPropertyOptional({ enum: ProjectSubmissionType })
   @IsOptional()
-  @ValidateIf((_, value) => value !== null)
-  @IsDateString()
-  demoDay?: string | null;
+  @IsEnum(ProjectSubmissionType)
+  submissionType?: ProjectSubmissionType;
 
   @ApiPropertyOptional({ enum: CourseProjectStatus })
   @IsOptional()

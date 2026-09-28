@@ -173,11 +173,9 @@ describe('Programs run as cohorts (e2e)', () => {
         .send({
           title: 'Kickoff',
           type: 'Lecture',
-          platform: 'Zoom',
           scheduledAt: fromNow(-1).toISOString(),
           durationMins: 60,
           courseId: id,
-          meetingLink: 'https://zoom.us/j/1',
         })
         .expect(201);
       await http()

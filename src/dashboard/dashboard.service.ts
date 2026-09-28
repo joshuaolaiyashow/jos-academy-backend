@@ -114,7 +114,6 @@ export class DashboardService {
       id: session.id,
       title: session.title,
       type: session.type,
-      platform: session.platform,
       scheduledAt: session.scheduledAt,
       durationMins: session.durationMins,
       status: session.status,

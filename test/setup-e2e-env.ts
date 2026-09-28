@@ -24,3 +24,7 @@ process.env.GOOGLE_CLIENT_ID = 'google-client-id';
 process.env.GOOGLE_CLIENT_SECRET = 'google-client-secret';
 delete process.env.LINKEDIN_CLIENT_ID;
 delete process.env.LINKEDIN_CLIENT_SECRET;
+// Room tokens are signed locally; the unreachable URL makes room cleanup fail fast instead of calling LiveKit Cloud.
+process.env.LIVEKIT_URL = 'ws://127.0.0.1:1';
+process.env.LIVEKIT_API_KEY = 'e2e-livekit-key';
+process.env.LIVEKIT_API_SECRET = 'e2e-livekit-secret-at-least-32-characters';

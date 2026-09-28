@@ -1,5 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+
+const MAX_MODULES_PER_PURCHASE = 50;
 import { EnrollmentType } from '../../generated/prisma/client';
 
 export class PurchaseCourseDto {
@@ -30,6 +40,19 @@ export class PurchaseCourseDto {
   @IsOptional()
   @IsString({ message: 'moduleId must be a string' })
   moduleId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['b2c3d4e5-f6a7-8901-bcde-f12345678901'],
+    description:
+      'For MODULAR: several modules to unlock in one purchase (use instead of moduleId)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_MODULES_PER_PURCHASE)
+  @IsString({ each: true })
+  moduleIds?: string[];
 
   @ApiPropertyOptional({
     example: 'LAUNCH20',

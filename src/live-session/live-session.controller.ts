@@ -1,17 +1,24 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  RawBodyRequest,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiExcludeEndpoint,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -23,8 +30,10 @@ import { CreateLiveSessionDto } from './dto/create-live-session.dto';
 import { UpdateLiveSessionStatusDto } from './dto/update-live-session-status.dto';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 import { UpdateLiveSessionDto } from './dto/update-live-session.dto';
+import { SessionScheduleQueryDto } from './dto/session-schedule-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
+import type { Request } from 'express';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../generated/prisma/client';
@@ -66,6 +75,37 @@ export class LiveSessionController {
     @Body() dto: CreateLiveSessionDto,
   ) {
     return this.liveSessionService.createLiveSession(req.user, dto);
+  }
+
+  /**
+   * LiveKit's participant join/leave events. Unauthenticated by design: the
+   * request is trusted only after its signature is verified against the raw body.
+   */
+  @Post('livekit/webhook')
+  @HttpCode(HttpStatus.OK)
+  @ApiExcludeEndpoint()
+  async liveKitWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    if (!req.rawBody) {
+      throw new UnauthorizedException('Missing webhook body.');
+    }
+    try {
+      await this.liveSessionService.handleLiveKitWebhook(
+        req.rawBody.toString('utf8'),
+        authorization,
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /signature|token|jwt/i.test(error.message)
+      ) {
+        throw new UnauthorizedException('Invalid webhook signature.');
+      }
+      throw error;
+    }
+    return { received: true };
   }
 
   @Get()
@@ -112,6 +152,26 @@ export class LiveSessionController {
     return this.liveSessionService.getMySessions(req.user.id);
   }
 
+  @Get('schedule')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      "The logged-in learner's sessions across their enrolled programs, within a date window",
+  })
+  @ApiResponse({ status: 200, description: 'Sessions ordered by start time.' })
+  @ApiResponse({ status: 400, description: 'Invalid or oversized window.' })
+  async getMySchedule(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: SessionScheduleQueryDto,
+  ) {
+    return this.liveSessionService.getLearnerSchedule(
+      req.user.id,
+      query.from,
+      query.to,
+    );
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
@@ -137,7 +197,8 @@ export class LiveSessionController {
   @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: "Update a live session's meeting link (creator or Admin only)",
+    summary:
+      "Reschedule a session that hasn't started, or set its recording link (creator or Admin only)",
   })
   @ApiParam({ name: 'id', description: 'Live session ID (UUID)' })
   @ApiResponse({ status: 200, description: 'Live session updated.' })
@@ -150,19 +211,43 @@ export class LiveSessionController {
     return this.liveSessionService.updateLiveSession(id, req.user, dto);
   }
 
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.INSTRUCTOR)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Delete a session scheduled by mistake — only if it never ran and nobody registered (creator or Admin only)',
+  })
+  @ApiParam({ name: 'id', description: 'Live session ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Deleted.' })
+  @ApiResponse({
+    status: 409,
+    description: 'Has registrations or already ran — cancel instead.',
+  })
+  async deleteLiveSession(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.liveSessionService.deleteLiveSession(id, req.user);
+  }
+
   @Post(':id/join')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary:
-      'Join a live session: records attendance and returns the meeting link',
+      'Join a live session: records attendance and returns a LiveKit room token',
   })
   @ApiParam({ name: 'id', description: 'Live session ID (UUID)' })
-  @ApiResponse({ status: 201, description: 'Joined; meeting link returned.' })
+  @ApiResponse({
+    status: 201,
+    description: 'Joined; returns { serverUrl, roomName, token }.',
+  })
   @ApiResponse({ status: 403, description: 'Not enrolled in this course.' })
   @ApiResponse({
     status: 409,
-    description: 'Session is not live yet, or has no meeting link.',
+    description: 'Session is not live yet.',
   })
   async joinSession(
     @Req() req: AuthenticatedRequest,

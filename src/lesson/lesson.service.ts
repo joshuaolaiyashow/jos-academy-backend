@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -13,6 +14,13 @@ import { BadgesService } from '../badges/badges.service';
 import { CertificateService } from '../certificate/certificate.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { RecordEngagementDto } from './dto/record-engagement.dto';
+import {
+  creditableSeconds,
+  MAX_VIDEO_PLAYBACK_RATE,
+  requiredEngagementSeconds,
+  VIEWING_SESSION_GAP_SECONDS,
+} from './lesson-engagement';
 import { LessonContentType, UserRole } from '../generated/prisma/client';
 import { sanitizeNoteHtml } from './lesson-note-html';
 import {
@@ -233,10 +241,7 @@ export class LessonService {
     };
   }
 
-  /**
-   * Mark a lesson as complete for the logged-in student
-   */
-  async completeLesson(userId: string, lessonId: string) {
+  private async findAccessibleLesson(userId: string, lessonId: string) {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
       include: { module: true },
@@ -252,6 +257,110 @@ export class LessonService {
     );
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this lesson.');
+    }
+    return lesson;
+  }
+
+  private toEngagementSummary(
+    lesson: Parameters<typeof requiredEngagementSeconds>[0],
+    progress: { engagedSeconds: number; completed: boolean } | null,
+  ) {
+    const requiredSeconds = requiredEngagementSeconds(lesson);
+    const engagedSeconds = progress?.engagedSeconds ?? 0;
+    return {
+      engagedSeconds,
+      requiredSeconds,
+      canComplete:
+        Boolean(progress?.completed) || engagedSeconds >= requiredSeconds,
+    };
+  }
+
+  /**
+   * Where the learner stands on this lesson's watch/read requirement. Opening
+   * a lesson after a break starts a fresh viewing session, so idle time
+   * between visits is never credited.
+   */
+  async getEngagement(userId: string, lessonId: string) {
+    const lesson = await this.findAccessibleLesson(userId, lessonId);
+    const now = new Date();
+    const existing = await this.prisma.lessonProgress.findUnique({
+      where: { userId_lessonId: { userId, lessonId } },
+    });
+    const isStale =
+      !existing?.lastHeartbeatAt ||
+      now.getTime() - existing.lastHeartbeatAt.getTime() >
+        VIEWING_SESSION_GAP_SECONDS * 1000;
+    const progress = isStale
+      ? await this.prisma.lessonProgress.upsert({
+          where: { userId_lessonId: { userId, lessonId } },
+          create: { userId, lessonId, lastHeartbeatAt: now },
+          update: { lastHeartbeatAt: now },
+        })
+      : existing;
+    return this.toEngagementSummary(lesson, progress);
+  }
+
+  /** Credits time actually spent watching or reading, bounded by the real time since the last beat. */
+  async recordEngagement(
+    userId: string,
+    lessonId: string,
+    dto: RecordEngagementDto,
+  ) {
+    const lesson = await this.findAccessibleLesson(userId, lessonId);
+    const now = new Date();
+
+    if (
+      lesson.contentType === LessonContentType.video &&
+      dto.videoDurationSeconds &&
+      lesson.videoSeconds === null
+    ) {
+      lesson.videoSeconds = dto.videoDurationSeconds;
+      await this.prisma.lesson.update({
+        where: { id: lessonId },
+        data: { videoSeconds: dto.videoDurationSeconds },
+      });
+    }
+
+    const existing = await this.prisma.lessonProgress.findUnique({
+      where: { userId_lessonId: { userId, lessonId } },
+    });
+    const credit = creditableSeconds(
+      dto.seconds,
+      existing?.lastHeartbeatAt ?? null,
+      now,
+      lesson.contentType === LessonContentType.video
+        ? MAX_VIDEO_PLAYBACK_RATE
+        : 1,
+    );
+    const progress = await this.prisma.lessonProgress.upsert({
+      where: { userId_lessonId: { userId, lessonId } },
+      create: { userId, lessonId, engagedSeconds: 0, lastHeartbeatAt: now },
+      update: {
+        engagedSeconds: { increment: credit },
+        lastHeartbeatAt: now,
+      },
+    });
+    return this.toEngagementSummary(lesson, progress);
+  }
+
+  /**
+   * Mark a lesson as complete for the logged-in student, once they've spent
+   * enough time on it (80% of a video, or the reading time of a note/code lesson).
+   */
+  async completeLesson(userId: string, lessonId: string) {
+    const lesson = await this.findAccessibleLesson(userId, lessonId);
+    const existing = await this.prisma.lessonProgress.findUnique({
+      where: { userId_lessonId: { userId, lessonId } },
+    });
+    const engagement = this.toEngagementSummary(lesson, existing);
+    if (!engagement.canComplete) {
+      throw new ConflictException({
+        message:
+          lesson.contentType === LessonContentType.video
+            ? 'Watch more of this video before marking it complete.'
+            : 'Spend a little more time on this lesson before marking it complete.',
+        ...engagement,
+      });
     }
 
     const progress = await this.prisma.lessonProgress.upsert({

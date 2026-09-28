@@ -6,19 +6,10 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
-  MaxLength,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { SessionPlatform, SessionType } from '../../generated/prisma/client';
-
-export const MEETING_LINK_MAX_LENGTH = 500;
-// Learners open this link directly, so only real https URLs are accepted.
-export const MEETING_LINK_URL_OPTIONS = {
-  protocols: ['https'],
-  require_protocol: true,
-};
+import { SessionType } from '../../generated/prisma/client';
 
 export class CreateLiveSessionDto {
   @ApiProperty({
@@ -36,27 +27,6 @@ export class CreateLiveSessionDto {
   })
   @IsEnum(SessionType, { message: 'type must be Lecture, Workshop, or QandA' })
   type: SessionType;
-
-  @ApiProperty({
-    enum: SessionPlatform,
-    example: SessionPlatform.Zoom,
-    description: 'Platform the session will be hosted on',
-  })
-  @IsEnum(SessionPlatform, {
-    message: 'platform must be Zoom, GoogleMeet, or MicrosoftTeams',
-  })
-  platform: SessionPlatform;
-
-  @ApiPropertyOptional({
-    example: 'https://zoom.us/j/1234567890',
-    description: 'Meeting link for the live session (https only)',
-  })
-  @IsOptional()
-  @IsUrl(MEETING_LINK_URL_OPTIONS, {
-    message: 'meetingLink must be a valid https:// link',
-  })
-  @MaxLength(MEETING_LINK_MAX_LENGTH)
-  meetingLink?: string;
 
   @ApiProperty({
     example: '2026-10-01T14:00:00.000Z',

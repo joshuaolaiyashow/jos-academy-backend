@@ -8,5 +8,6 @@ import { CourseAccessModule } from '../course-access/course-access.module';
   imports: [PrismaModule, CourseAccessModule],
   controllers: [MediaController],
   providers: [MediaService],
+  exports: [MediaService],
 })
 export class MediaModule {}

@@ -3,13 +3,14 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsDateString,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { ProjectSubmissionType } from '../../generated/prisma/client';
 
 export const MAX_PROJECT_MILESTONES = 10;
 
@@ -43,10 +44,11 @@ export class CreateCourseProjectDto {
   milestones: string[];
 
   @ApiPropertyOptional({
-    example: '2026-12-18T15:00:00.000Z',
-    description: 'When learners present the finished project',
+    enum: ProjectSubmissionType,
+    default: ProjectSubmissionType.CODE,
+    description: 'What learners hand in for each milestone',
   })
   @IsOptional()
-  @IsDateString()
-  demoDay?: string;
+  @IsEnum(ProjectSubmissionType)
+  submissionType?: ProjectSubmissionType;
 }

@@ -656,7 +656,7 @@ export class AdminService {
             title: true,
             description: true,
             milestones: true,
-            demoDay: true,
+            submissionType: true,
           },
         },
       },

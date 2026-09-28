@@ -49,7 +49,10 @@ export class EnrollmentService {
    * Purchase a Course (Full Course or Module-by-Module) using user's Credit Wallet
    */
   async purchaseWithCredits(userId: string, dto: PurchaseCourseDto) {
-    const { courseId, type, moduleId, discountCode } = dto;
+    const { courseId, type, discountCode } = dto;
+    const requestedModuleIds = [
+      ...new Set(dto.moduleIds ?? (dto.moduleId ? [dto.moduleId] : [])),
+    ];
     const now = new Date();
 
     // 1. Fetch user
@@ -116,47 +119,47 @@ export class EnrollmentService {
     );
 
     let requiredCredits: number;
-    let targetModuleId: string | null = null;
+    let targetModuleIds: string[] = [];
     let txType: CreditTransactionType;
     let description: string;
-    let targetModuleTitle = '';
+    let targetModuleTitles: string[] = [];
 
     if (type === EnrollmentType.FULL_COURSE) {
       requiredCredits = courseTotalCredits;
       txType = CreditTransactionType.COURSE_PURCHASE;
       description = `Full course purchase: "${course.name}"`;
     } else if (type === EnrollmentType.MODULAR) {
-      if (!moduleId) {
+      if (requestedModuleIds.length === 0) {
         throw new BadRequestException(
-          'moduleId is required when purchasing a specific module.',
+          'Choose at least one module to purchase.',
         );
       }
 
-      const targetModule = course.modules.find((m) => m.id === moduleId);
-      if (!targetModule) {
-        throw new BadRequestException(
-          `Module with ID "${moduleId}" does not belong to this course.`,
-        );
-      }
-
-      targetModuleTitle = targetModule.title;
-
-      // Check if module is already unlocked
-      if (existingEnrollment) {
-        const alreadyUnlocked = existingEnrollment.enrolledModules.some(
-          (em) => em.moduleId === moduleId,
-        );
-        if (alreadyUnlocked) {
-          throw new ConflictException(
-            `You have already purchased module "${targetModule.title}".`,
+      const targetModules = requestedModuleIds.map((id) => {
+        const module = course.modules.find((m) => m.id === id);
+        if (!module) {
+          throw new BadRequestException(
+            `Module with ID "${id}" does not belong to this course.`,
           );
         }
+        return module;
+      });
+
+      const owned = new Set(
+        existingEnrollment?.enrolledModules.map((em) => em.moduleId) ?? [],
+      );
+      const alreadyOwned = targetModules.filter((m) => owned.has(m.id));
+      if (alreadyOwned.length > 0) {
+        throw new ConflictException(
+          `You have already purchased ${alreadyOwned.map((m) => `"${m.title}"`).join(', ')}.`,
+        );
       }
 
-      requiredCredits = moduleCredits;
-      targetModuleId = moduleId;
+      targetModuleTitles = targetModules.map((m) => m.title);
+      requiredCredits = moduleCredits * targetModules.length;
+      targetModuleIds = targetModules.map((m) => m.id);
       txType = CreditTransactionType.MODULE_PURCHASE;
-      description = `Module purchase: "${targetModule.title}" (${course.name})`;
+      description = `Module purchase: ${targetModuleTitles.map((title) => `"${title}"`).join(', ')} (${course.name})`;
     } else {
       throw new BadRequestException('Invalid enrollment type');
     }
@@ -260,7 +263,8 @@ export class EnrollmentService {
           description,
           reference: txReference,
           courseId,
-          moduleId: targetModuleId,
+          // A single-module purchase keeps pointing at its module; a bundle lists them in the description.
+          moduleId: targetModuleIds.length === 1 ? targetModuleIds[0] : null,
         },
       });
 
@@ -301,21 +305,16 @@ export class EnrollmentService {
             update: {},
           });
         }
-      } else if (targetModuleId) {
-        // Unlock the specific module
-        await tx.enrolledModule.upsert({
-          where: {
-            enrollmentId_moduleId: {
-              enrollmentId: enrollment.id,
-              moduleId: targetModuleId,
+      } else if (targetModuleIds.length > 0) {
+        for (const moduleId of targetModuleIds) {
+          await tx.enrolledModule.upsert({
+            where: {
+              enrollmentId_moduleId: { enrollmentId: enrollment.id, moduleId },
             },
-          },
-          create: {
-            enrollmentId: enrollment.id,
-            moduleId: targetModuleId,
-          },
-          update: {},
-        });
+            create: { enrollmentId: enrollment.id, moduleId },
+            update: {},
+          });
+        }
 
         // Check if student now unlocked all modules
         const unlockedCount = await tx.enrolledModule.count({
@@ -345,11 +344,18 @@ export class EnrollmentService {
     await this.badgesService.evaluateEnrollmentPurchase(userId, type);
 
     return {
-      message: `${type === EnrollmentType.FULL_COURSE ? 'Course' : `Module "${targetModuleTitle}"`} purchased successfully with credits!`,
+      message: `${
+        type === EnrollmentType.FULL_COURSE
+          ? 'Course'
+          : targetModuleTitles.length === 1
+            ? `Module "${targetModuleTitles[0]}"`
+            : `${targetModuleTitles.length} modules`
+      } purchased successfully with credits!`,
       courseId: course.id,
       courseName: course.name,
       purchaseType: type,
-      moduleId: targetModuleId,
+      moduleId: targetModuleIds[0] ?? null,
+      moduleIds: targetModuleIds,
       creditsDeducted: requiredCredits,
       originalCredits: fullPriceCredits,
       discountCredits: result.discountAmount,

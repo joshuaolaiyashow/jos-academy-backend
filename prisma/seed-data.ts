@@ -673,7 +673,6 @@ export type SeedLiveSession = {
   courseName: string;
   title: string;
   type: 'Lecture' | 'Workshop' | 'QandA';
-  platform: 'Zoom' | 'GoogleMeet' | 'MicrosoftTeams';
   daysFromNow: number;
   hourUtc: number;
   durationMins: number;
@@ -684,7 +683,6 @@ export const SEED_LIVE_SESSIONS: SeedLiveSession[] = [
     courseName: 'Introduction to Robotics',
     title: 'Live build: your first line follower',
     type: 'Workshop',
-    platform: 'GoogleMeet',
     daysFromNow: 2,
     hourUtc: 17,
     durationMins: 90,
@@ -693,7 +691,6 @@ export const SEED_LIVE_SESSIONS: SeedLiveSession[] = [
     courseName: 'Machine Learning Foundations',
     title: 'Live lecture: overfitting and validation',
     type: 'Lecture',
-    platform: 'Zoom',
     daysFromNow: 4,
     hourUtc: 18,
     durationMins: 60,
@@ -702,7 +699,6 @@ export const SEED_LIVE_SESSIONS: SeedLiveSession[] = [
     courseName: 'Full-Stack Web Development Bootcamp',
     title: 'Office hours: NestJS and Prisma Q&A',
     type: 'QandA',
-    platform: 'MicrosoftTeams',
     daysFromNow: 6,
     hourUtc: 16,
     durationMins: 45,
@@ -711,7 +707,6 @@ export const SEED_LIVE_SESSIONS: SeedLiveSession[] = [
     courseName: 'Aerospace Fundamentals: Flight & Propulsion',
     title: 'Live lecture: lift, drag, and stall',
     type: 'Lecture',
-    platform: 'Zoom',
     daysFromNow: 8,
     hourUtc: 17,
     durationMins: 60,

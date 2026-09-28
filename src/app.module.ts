@@ -1,3 +1,4 @@
+import { ScheduleModule } from '@nestjs/schedule';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -35,6 +36,7 @@ import { auditContextMiddleware } from './audit/audit-context';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     NotificationModule,

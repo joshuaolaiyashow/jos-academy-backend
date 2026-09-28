@@ -5,6 +5,10 @@
   "testRegex": ".e2e-spec.ts$",
   "setupFiles": ["<rootDir>/setup-e2e-env.ts"],
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
-  }
+    "^.+\\.ts$": "ts-jest",
+    "^.+\\.js$": ["ts-jest", { "tsconfig": { "allowJs": true }, "isolatedModules": true }]
+  },
+  "transformIgnorePatterns": [
+    "/node_modules/(?!(htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities)/)"
+  ]
 }
