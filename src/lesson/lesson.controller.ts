@@ -66,7 +66,12 @@ export class LessonController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all lessons for a module' })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Get all lessons for a module (content locked unless the student has module access)',
+  })
   @ApiQuery({
     name: 'moduleId',
     required: true,
@@ -78,8 +83,15 @@ export class LessonController {
     status: 400,
     description: 'Bad Request - moduleId is required.',
   })
-  async getLessons(@Query('moduleId') moduleId?: string) {
-    return this.lessonService.getLessonsByModule(moduleId);
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Token missing or invalid.',
+  })
+  async getLessons(
+    @Req() req: AuthenticatedRequest,
+    @Query('moduleId') moduleId?: string,
+  ) {
+    return this.lessonService.getLessonsByModule(req.user, moduleId);
   }
 
   @Patch(':id')

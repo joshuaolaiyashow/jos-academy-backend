@@ -245,12 +245,18 @@ export class EnrollmentService {
         );
       }
 
-      // Deduct credits from user wallet
-      const updatedUser = await tx.user.update({
+      // The balance guard makes the deduction atomic: two racing purchases can't both pass the earlier read-time check and overdraw the wallet.
+      const { count: debited } = await tx.user.updateMany({
+        where: { id: userId, credits: { gte: requiredCredits } },
+        data: { credits: { decrement: requiredCredits } },
+      });
+      if (debited === 0) {
+        throw new BadRequestException(
+          'Not enough credits for this purchase. Your balance changed; please check it and try again.',
+        );
+      }
+      const updatedUser = await tx.user.findUniqueOrThrow({
         where: { id: userId },
-        data: {
-          credits: { decrement: requiredCredits },
-        },
       });
 
       // Record credit transaction

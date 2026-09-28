@@ -12,7 +12,9 @@ export const MAX_VIDEO_PLAYBACK_RATE = 2;
 
 /** Longest single heartbeat credited, and slack for network delay between beats. */
 export const MAX_HEARTBEAT_SECONDS = 120;
-const HEARTBEAT_SLACK_SECONDS = 5;
+const MAX_HEARTBEAT_SLACK_SECONDS = 5;
+/** Slack grows with the real gap, so a burst of rapid beats can't each claim the full allowance. */
+const HEARTBEAT_SLACK_SHARE = 1 / 3;
 /** A gap longer than this starts a fresh viewing session rather than crediting idle time. */
 export const VIEWING_SESSION_GAP_SECONDS = 60;
 /** Upper bound on a reported video length, so a bad report can't make a lesson uncompletable. */
@@ -34,8 +36,11 @@ const countWords = (content: string): number =>
 /** How long a learner must engage with a lesson before "Mark complete" is allowed. */
 export const requiredEngagementSeconds = (lesson: EngagementLesson): number => {
   if (lesson.contentType === LessonContentType.video) {
-    const lengthSeconds =
-      lesson.videoSeconds ?? (lesson.duration ?? 0) * SECONDS_PER_MINUTE;
+    // videoSeconds comes from a learner's player, so it may only raise the bar, never lower it below the creator's duration.
+    const lengthSeconds = Math.max(
+      lesson.videoSeconds ?? 0,
+      (lesson.duration ?? 0) * SECONDS_PER_MINUTE,
+    );
     return Math.round(lengthSeconds * VIDEO_WATCH_SHARE);
   }
   const readingSeconds = Math.round(
@@ -59,10 +64,15 @@ export const creditableSeconds = (
   now: Date,
   maxRate = 1,
 ): number => {
+  const elapsedSeconds = lastHeartbeatAt
+    ? Math.max(0, (now.getTime() - lastHeartbeatAt.getTime()) / 1000)
+    : 0;
+  const slackSeconds = Math.min(
+    MAX_HEARTBEAT_SLACK_SECONDS,
+    elapsedSeconds * HEARTBEAT_SLACK_SHARE,
+  );
   const sinceLastBeat = lastHeartbeatAt
-    ? ((now.getTime() - lastHeartbeatAt.getTime()) / 1000 +
-        HEARTBEAT_SLACK_SECONDS) *
-      maxRate
+    ? (elapsedSeconds + slackSeconds) * maxRate
     : 0;
   return Math.max(
     0,

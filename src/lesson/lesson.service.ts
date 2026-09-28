@@ -21,7 +21,11 @@ import {
   requiredEngagementSeconds,
   VIEWING_SESSION_GAP_SECONDS,
 } from './lesson-engagement';
-import { LessonContentType, UserRole } from '../generated/prisma/client';
+import {
+  type Lesson,
+  LessonContentType,
+  UserRole,
+} from '../generated/prisma/client';
 import { sanitizeNoteHtml } from './lesson-note-html';
 import {
   CourseAccessService,
@@ -36,6 +40,20 @@ const cleanContent = (
   content !== undefined && contentType === LessonContentType.note
     ? sanitizeNoteHtml(content)
     : content;
+
+/** What a learner without module access may see of a lesson: its outline, never the content. */
+const toLockedLesson = (lesson: Lesson) => ({
+  id: lesson.id,
+  title: lesson.title,
+  description: lesson.description,
+  contentType: lesson.contentType,
+  duration: lesson.duration,
+  order: lesson.order,
+  moduleId: lesson.moduleId,
+  videoUrl: null,
+  content: null,
+  locked: true,
+});
 
 @Injectable()
 export class LessonService {
@@ -176,9 +194,20 @@ export class LessonService {
   /**
    * Get all lessons for a given module, ordered by their sequence
    */
-  async getLessonsByModule(moduleId?: string) {
+  async getLessonsByModule(
+    user: { id: string; role: UserRole },
+    moduleId?: string,
+  ) {
     if (!moduleId) {
       throw new BadRequestException('moduleId query parameter is required');
+    }
+
+    const module = await this.prisma.modules.findUnique({
+      where: { id: moduleId },
+      include: { course: { select: { creatorId: true } } },
+    });
+    if (!module) {
+      throw new NotFoundException(`Module with ID "${moduleId}" not found`);
     }
 
     const lessons = await this.prisma.lesson.findMany({
@@ -186,9 +215,22 @@ export class LessonService {
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
 
+    const { hasAccess } = this.courseAccess.isOwnerOrAdmin(
+      user,
+      module.course.creatorId,
+    )
+      ? { hasAccess: true }
+      : await this.enrollmentService.checkModuleAccess(
+          user.id,
+          module.courseId,
+          moduleId,
+        );
+
     return {
       total: lessons.length,
-      lessons,
+      lessons: hasAccess
+        ? lessons.map((lesson) => ({ ...lesson, locked: false }))
+        : lessons.map(toLockedLesson),
     };
   }
 
@@ -220,18 +262,7 @@ export class LessonService {
         );
 
     if (!hasAccess) {
-      return {
-        id: lesson.id,
-        title: lesson.title,
-        description: lesson.description,
-        contentType: lesson.contentType,
-        duration: lesson.duration,
-        order: lesson.order,
-        moduleId: lesson.moduleId,
-        videoUrl: null,
-        content: null,
-        locked: true,
-      };
+      return toLockedLesson(lesson);
     }
 
     const { module, ...lessonData } = lesson;

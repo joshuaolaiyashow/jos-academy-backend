@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   InternalServerErrorException,
@@ -196,24 +197,47 @@ export class MediaController {
   @Get('lessons/:lessonId/transcode-status')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: "Get a lesson's video transcode status" })
+  @ApiOperation({
+    summary:
+      "Get a lesson's video transcode status (lesson's course creator or Admin)",
+  })
   @ApiParam({ name: 'lessonId', description: 'Lesson ID (UUID)' })
   @ApiResponse({ status: 200, description: 'Transcode status.' })
-  async getTranscodeStatus(@Param('lessonId') lessonId: string) {
+  @ApiResponse({
+    status: 403,
+    description: "Forbidden - Not this lesson's course creator.",
+  })
+  async getTranscodeStatus(
+    @Param('lessonId') lessonId: string,
+    @Req() req: any,
+  ) {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
       select: {
         videoProcessingStatus: true,
         videoProcessingError: true,
         videoUrl: true,
+        module: { select: { course: { select: { creatorId: true } } } },
       },
     });
 
     if (!lesson) {
       throw new NotFoundException(`Lesson with ID "${lessonId}" not found`);
     }
+    // Deliberately not findEditableLesson: creators keep polling after the program goes live.
+    if (
+      !this.courseAccess.isOwnerOrAdmin(
+        req.user,
+        lesson.module.course.creatorId,
+      )
+    ) {
+      throw new ForbiddenException(
+        "You can only view your own lessons' videos.",
+      );
+    }
 
-    return lesson;
+    const { module, ...status } = lesson;
+    return status;
   }
 
   /**
