@@ -101,7 +101,8 @@ describe('Refresh token hardening (e2e)', () => {
     const rotated = (await refresh(refreshToken).expect(201)).body as Tokens;
 
     const replay = await refresh(refreshToken).expect(401);
-    expect(replay.body.code).toBeUndefined();
+    // Every error now carries a generic code; what matters is it isn't flagged as theft.
+    expect(replay.body.code).not.toBe('REFRESH_TOKEN_REUSED');
 
     await refresh(rotated.refreshToken).expect(201);
   });

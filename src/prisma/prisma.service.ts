@@ -21,11 +21,13 @@ export class PrismaService
       connectionString,
       // Neon requires TLS; a local Docker Postgres (tests, dev) has none.
       // Ignored in production so a copied env var can never drop TLS there.
+      // rejectUnauthorized stays true so the connection actually validates
+      // the server certificate — Neon's certs chain to a public CA.
       ssl:
         process.env.DATABASE_SSL === 'false' &&
         process.env.NODE_ENV !== 'production'
           ? false
-          : { rejectUnauthorized: false },
+          : { rejectUnauthorized: true },
     });
     const adapter = new PrismaPg(pool);
     super({ adapter });
@@ -40,9 +42,11 @@ export class PrismaService
       await this.$queryRaw`SELECT 1`;
 
       this.logger.log('🚀 Database connection established successfully.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error('❌ Failed to connect to the database.');
-      this.logger.error(error?.stack || error?.message || error);
+      this.logger.error(
+        error instanceof Error ? error.stack || error.message : error,
+      );
 
       // Gracefully terminate app if DB connection is mandatory on startup
       process.exit(1);

@@ -11,6 +11,7 @@ import { NotificationService } from '../notification/notification.service';
 import { CreateCreatorDto } from './dto/create-creator.dto';
 import { generateRandomPassword, generateReferralCode } from '../utils';
 import { UserRole } from '../generated/prisma/client';
+import { PASSWORD_HASH_ROUNDS } from '../auth/auth.constants';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -51,7 +52,10 @@ export class CreatorService {
 
     // 2. Generate temporary password and hash it
     const tempPassword = generateRandomPassword(12);
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+    const hashedPassword = await bcrypt.hash(
+      tempPassword,
+      PASSWORD_HASH_ROUNDS,
+    );
 
     // 3. Generate referral code
     const referralCode = generateReferralCode(8, 'CREATOR');

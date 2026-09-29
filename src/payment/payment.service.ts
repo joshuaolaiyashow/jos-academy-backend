@@ -4,7 +4,8 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { getErrorMessage } from '../utils';
 
 export interface InitializePaymentOptions {
   email: string;
@@ -12,7 +13,7 @@ export interface InitializePaymentOptions {
   reference?: string;
   callbackUrl?: string;
   channels?: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PaystackInitResponse {
@@ -41,7 +42,7 @@ export interface PaystackVerifyResponse {
     channel: string;
     currency: string;
     ip_address: string;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
     customer: {
       id: number;
       first_name: string;
@@ -74,10 +75,13 @@ export class PaymentService {
   private readonly secretKey: string;
 
   constructor() {
-    this.secretKey = process.env.PAYSTACK_SECRET_KEY || '';
-    if (!this.secretKey) {
-      this.logger.warn('⚠️ PAYSTACK_SECRET_KEY is not configured in .env!');
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error(
+        'PAYSTACK_SECRET_KEY environment variable is not configured',
+      );
     }
+    this.secretKey = secretKey;
   }
 
   /**
@@ -128,14 +132,12 @@ export class PaymentService {
 
       this.logger.log(`💳 Payment initialized: Ref ${data.data.reference}`);
       return data.data;
-    } catch (error: any) {
-      this.logger.error(
-        'Error initializing Paystack transaction:',
-        error.message,
-      );
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      this.logger.error('Error initializing Paystack transaction:', message);
       if (error instanceof BadRequestException) throw error;
       throw new InternalServerErrorException(
-        error.message || 'Payment initialization failed',
+        message || 'Payment initialization failed',
       );
     }
   }
@@ -174,11 +176,12 @@ export class PaymentService {
         `✅ Transaction ${reference} status: ${data.data.status} (Amount: ₦${data.data.amount / 100})`,
       );
       return data.data;
-    } catch (error: any) {
-      this.logger.error('Error verifying Paystack transaction:', error.message);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      this.logger.error('Error verifying Paystack transaction:', message);
       if (error instanceof BadRequestException) throw error;
       throw new InternalServerErrorException(
-        error.message || 'Payment verification failed',
+        message || 'Payment verification failed',
       );
     }
   }
@@ -189,7 +192,7 @@ export class PaymentService {
    * @param body The raw request payload body string/buffer
    * @returns boolean indicating if the webhook is genuine
    */
-  verifyWebhookSignature(signature: string, body: any): boolean {
+  verifyWebhookSignature(signature: string, body: unknown): boolean {
     if (!signature || !this.secretKey) {
       return false;
     }
@@ -199,6 +202,13 @@ export class PaymentService {
       .update(payload)
       .digest('hex');
 
-    return hash === signature;
+    const hashBuffer = Buffer.from(hash, 'hex');
+    const signatureBuffer = Buffer.from(signature, 'hex');
+
+    if (hashBuffer.length !== signatureBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(hashBuffer, signatureBuffer);
   }
 }

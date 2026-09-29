@@ -13,11 +13,16 @@ export interface JwtPayload {
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly prisma: PrismaService) {
+    const secret = process.env.JWT_SECRET;
+
+    if (!secret) {
+      throw new Error('JWT_SECRET environment variable is not configured');
+    }
+
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey:
-        process.env.JWT_SECRET || 'super_secret_jwt_key_jos_academy_2026',
+      secretOrKey: secret,
     });
   }
 

@@ -1,7 +1,10 @@
 import { ScheduleModule } from '@nestjs/schedule';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { NotificationModule } from './notification/notification.module';
@@ -37,6 +40,13 @@ import { auditContextMiddleware } from './audit/audit-context';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    // Global rate limit; auth.controller.ts tightens the window further on
+    // sign-in/sign-up/password-reset via the @Throttle decorator.
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      // Only the e2e setup sets this: the suite signs in far more often than a real client.
+      skipIf: () => process.env.E2E_DISABLE_RATE_LIMIT === 'true',
+    }),
     PrismaModule,
     AuthModule,
     NotificationModule,
@@ -69,7 +79,11 @@ import { auditContextMiddleware } from './audit/audit-context';
     AuditModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

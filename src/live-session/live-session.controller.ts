@@ -25,6 +25,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { LiveSessionService } from './live-session.service';
 import { CreateLiveSessionDto } from './dto/create-live-session.dto';
 import { UpdateLiveSessionStatusDto } from './dto/update-live-session-status.dto';
@@ -82,6 +83,8 @@ export class LiveSessionController {
    * request is trusted only after its signature is verified against the raw body.
    */
   @Post('livekit/webhook')
+  // LiveKit sends join/leave bursts for a whole class from its own servers; the signature check guards this route.
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiExcludeEndpoint()
   async liveKitWebhook(

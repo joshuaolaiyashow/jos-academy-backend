@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -45,21 +53,27 @@ export class CreatorController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all creators / instructors' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get all creators / instructors (Admin only)' })
   @ApiResponse({ status: 200, description: 'List of all creators.' })
   async getCreators() {
     return this.creatorService.getCreators();
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get creator details by ID' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get creator details by ID (Admin only)' })
   @ApiParam({ name: 'id', description: 'Creator User ID (UUID)' })
   @ApiResponse({ status: 200, description: 'Creator profile details.' })
   @ApiResponse({
     status: 404,
     description: 'Not Found - Creator does not exist.',
   })
-  async getCreatorById(@Param('id') id: string) {
+  async getCreatorById(@Param('id', ParseUUIDPipe) id: string) {
     return this.creatorService.getCreatorById(id);
   }
 }

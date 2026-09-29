@@ -32,3 +32,6 @@ export const AUTH_ERROR_CODES = {
   REFRESH_TOKEN_REUSED: 'REFRESH_TOKEN_REUSED',
   ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
 } as const;
+
+/** bcrypt cost factor for every password hashed in this codebase. */
+export const PASSWORD_HASH_ROUNDS = 12;

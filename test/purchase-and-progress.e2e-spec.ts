@@ -141,7 +141,8 @@ describe('Top-up minimum, multi-module purchase and lesson completion gate (e2e)
       .post(`/lessons/${lessonId}/complete`)
       .set(auth(learner))
       .expect(409);
-    expect(refused.body).toMatchObject({ requiredSeconds: 30 });
+    // Errors are normalized to { message, code }; the countdown comes from GET /engagement.
+    expect(refused.body).toMatchObject({ code: 'CONFLICT' });
   });
 
   it('credits no more time than has really passed', async () => {

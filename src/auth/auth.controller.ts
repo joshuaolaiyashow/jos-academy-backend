@@ -9,6 +9,10 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+
+/** Tighter window for endpoints that are natural brute-force/enumeration targets. */
+const AUTH_THROTTLE = { default: { ttl: 60_000, limit: 5 } };
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -26,6 +30,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import type { AuthenticatedRequest } from './types/authenticated-request';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -33,6 +38,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('sign-up')
+  @Throttle(AUTH_THROTTLE)
   @ApiOperation({
     summary: 'Register a new user and send email verification link',
   })
@@ -47,6 +53,7 @@ export class AuthController {
   }
 
   @Post('sign-in')
+  @Throttle(AUTH_THROTTLE)
   @ApiOperation({ summary: 'Sign in user and return JWT access token' })
   @ApiResponse({
     status: 200,
@@ -88,6 +95,7 @@ export class AuthController {
   }
 
   @Post('resend-verification')
+  @Throttle(AUTH_THROTTLE)
   @HttpCode(200)
   @ApiOperation({
     summary: 'Re-send the email verification link to an unverified account',
@@ -102,6 +110,7 @@ export class AuthController {
   }
 
   @Post('forget-password')
+  @Throttle(AUTH_THROTTLE)
   @ApiOperation({
     summary: 'Initiate password reset by sending a 6-digit OTP to user email',
   })
@@ -115,6 +124,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @Throttle(AUTH_THROTTLE)
   @ApiOperation({ summary: 'Reset password using the 6-digit OTP code' })
   @ApiResponse({ status: 200, description: 'Password reset successfully.' })
   @ApiResponse({
@@ -126,6 +136,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle(AUTH_THROTTLE)
   @ApiOperation({
     summary: 'Exchange a refresh token for a new access/refresh token pair',
   })
@@ -157,7 +168,10 @@ export class AuthController {
     status: 401,
     description: 'Unauthorized - Invalid or missing token.',
   })
-  async changePassword(@Request() req: any, @Body() dto: ChangePasswordDto) {
+  async changePassword(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: ChangePasswordDto,
+  ) {
     return this.authService.changePassword(req.user.id, dto.newPassword);
   }
 
@@ -170,7 +184,7 @@ export class AuthController {
     status: 401,
     description: 'Unauthorized - Invalid or missing token.',
   })
-  async getProfile(@Request() req: any) {
+  async getProfile(@Request() req: AuthenticatedRequest) {
     return req.user;
   }
 }

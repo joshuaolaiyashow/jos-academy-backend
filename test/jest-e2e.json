@@ -9,6 +9,6 @@
     "^.+\\.js$": ["ts-jest", { "tsconfig": { "allowJs": true }, "isolatedModules": true }]
   },
   "transformIgnorePatterns": [
-    "/node_modules/(?!(htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities)/)"
+    "/node_modules/(?!(\\.pnpm/)?(htmlparser2|domhandler|domutils|dom-serializer|domelementtype|entities)[@/])"
   ]
 }

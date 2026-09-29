@@ -21,9 +21,15 @@ import { OAuthProviderClient } from './oauth/oauth-provider.client';
     // only provides the default secret JwtStrategy verifies access tokens
     // against.
     JwtModule.registerAsync({
-      useFactory: () => ({
-        secret: process.env.JWT_SECRET,
-      }),
+      useFactory: () => {
+        const secret = process.env.JWT_SECRET;
+
+        if (!secret) {
+          throw new Error('JWT_SECRET environment variable is not configured');
+        }
+
+        return { secret };
+      },
     }),
   ],
   providers: [AuthService, JwtStrategy, OAuthService, OAuthProviderClient],

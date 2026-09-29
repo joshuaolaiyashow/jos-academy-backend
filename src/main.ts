@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import helmet from 'helmet';
 
 async function bootstrap() {
   // rawBody: true keeps the raw request Buffer available as req.rawBody alongside
@@ -15,12 +16,14 @@ async function bootstrap() {
   // One hop: the AWS load balancer. Without this req.ip is the ALB's address, so
   // audit entries would record the balancer instead of the real client.
   app.set('trust proxy', 1);
+  app.use(helmet());
   // LiveKit webhooks are sent as application/webhook+json; parsed like JSON so
   // req.rawBody is kept for signature verification. application/json must stay
   // in the list: registering any json parser here makes Nest skip its default
   // one, which would leave every normal request body empty.
   app.useBodyParser('json', {
     type: ['application/json', 'application/webhook+json'],
+    limit: '1mb',
   });
 
   // Enable global validation pipe for DTO validation

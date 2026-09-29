@@ -16,13 +16,14 @@ import { ForgetPasswordDto } from './dto/forget-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
-import { generateReferralCode } from '../utils';
+import { generateReferralCode, requireEnv } from '../utils';
 import { UserRole, VerificationType } from '../generated/prisma/client';
 import { SELF_SIGNUP_ROLES } from './auth.constants';
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import {
   AUTH_ERROR_CODES,
+  PASSWORD_HASH_ROUNDS,
   REFRESH_REUSE_GRACE_MS,
   refreshTokenTtlMs,
   type ClientType,
@@ -69,7 +70,7 @@ export class AuthService {
     const payload = { sub: user.id, email: user.email, role: user.role };
 
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: process.env.JWT_SECRET,
+      secret: requireEnv('JWT_SECRET'),
       expiresIn: ACCESS_TOKEN_TTL,
     });
 
@@ -78,7 +79,7 @@ export class AuthService {
     const refreshToken = await this.jwtService.signAsync(
       { ...payload, jti: randomUUID(), ct: clientType },
       {
-        secret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+        secret: process.env.JWT_REFRESH_SECRET || requireEnv('JWT_SECRET'),
         expiresIn: Math.floor(refreshTokenTtlMs(clientType) / 1000),
       },
     );
@@ -119,7 +120,7 @@ export class AuthService {
     const referredById = await this.referrals.findReferrerId(referralCode);
 
     // 2. Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, PASSWORD_HASH_ROUNDS);
 
     // 3. Generate unique referral code for new user if not provided
     const userReferralCode = generateReferralCode(8, 'JOS');
@@ -187,7 +188,7 @@ export class AuthService {
       },
     });
 
-    const appUrl = process.env.APP_URL || 'http://localhost:3000';
+    const appUrl = requireEnv('APP_URL');
     const verificationLink = `${appUrl}/verify-email?token=${token}&email=${encodeURIComponent(user.email)}`;
     await this.notificationService.sendEmailVerirfaction(
       user.email,
@@ -303,7 +304,7 @@ export class AuthService {
       targetType: AUDIT_TARGETS.USER,
       targetId: user.id,
     });
-    this.logger.log(`🔑 User signed in successfully: ${user.email}`);
+    this.logger.log(`🔑 User signed in successfully: ${user.id}`);
     return this.createSession(user, body.clientType);
   }
 
@@ -401,7 +402,7 @@ export class AuthService {
     ]);
 
     this.logger.log(
-      `✅ Email verified successfully for user: ${verification.user.email}`,
+      `✅ Email verified successfully for user: ${verification.user.id}`,
     );
 
     return {
@@ -457,7 +458,7 @@ export class AuthService {
 
     // 5. Send password reset link email via NotificationService
     // APP_URL is the frontend's origin — see the matching note in signUp().
-    const appUrl = process.env.APP_URL || 'http://localhost:3000';
+    const appUrl = requireEnv('APP_URL');
     const resetLink = `${appUrl}/reset-password?token=${token}`;
     await this.notificationService.sendPasswordResetLinkEmail(
       user.email,
@@ -503,7 +504,7 @@ export class AuthService {
     }
 
     // 3. Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, PASSWORD_HASH_ROUNDS);
 
     // 4. Update user password and delete used verification record
     await this.prisma.$transaction([
@@ -523,7 +524,7 @@ export class AuthService {
       targetId: verification.user.id,
     });
     this.logger.log(
-      `✅ Password reset successfully for user: ${verification.user.email}`,
+      `✅ Password reset successfully for user: ${verification.user.id}`,
     );
 
     return {
@@ -538,7 +539,7 @@ export class AuthService {
    * on accounts created with a temporary password (see creator.service.ts).
    */
   async changePassword(userId: string, newPassword: string) {
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, PASSWORD_HASH_ROUNDS);
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -583,7 +584,7 @@ export class AuthService {
     let payload: { sub: string; ct?: ClientType };
     try {
       payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+        secret: process.env.JWT_REFRESH_SECRET || requireEnv('JWT_SECRET'),
       });
     } catch {
       throw invalid;
@@ -635,7 +636,7 @@ export class AuthService {
     if (count !== 1) throw invalid;
 
     const tokens = await this.issueTokenPair(user, payload.ct ?? 'web');
-    this.logger.log(`🔄 Refresh token rotated for user: ${user.email}`);
+    this.logger.log(`🔄 Refresh token rotated for user: ${user.id}`);
 
     return {
       message: 'Token refreshed successfully',

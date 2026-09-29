@@ -28,3 +28,7 @@ delete process.env.LINKEDIN_CLIENT_SECRET;
 process.env.LIVEKIT_URL = 'ws://127.0.0.1:1';
 process.env.LIVEKIT_API_KEY = 'e2e-livekit-key';
 process.env.LIVEKIT_API_SECRET = 'e2e-livekit-secret-at-least-32-characters';
+// PaymentService now refuses to boot without a key; tests never call Paystack.
+process.env.PAYSTACK_SECRET_KEY = 'sk_test_e2e_placeholder';
+// Many sign-ins per second from one IP would otherwise hit the auth rate limit.
+process.env.E2E_DISABLE_RATE_LIMIT = 'true';
