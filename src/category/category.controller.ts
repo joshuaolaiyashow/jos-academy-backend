@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -8,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -39,6 +50,35 @@ export class CategoryController {
   })
   async createCategory(@Body() createCategoryDto: CreateCategoryDto) {
     return this.categoryService.createCategory(createCategoryDto);
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Rename or re-describe a category (Admin only)' })
+  @ApiParam({ name: 'id', description: 'Category ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Category updated.' })
+  @ApiResponse({ status: 404, description: 'Category does not exist.' })
+  @ApiResponse({ status: 409, description: 'Category name already exists.' })
+  async updateCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateCategoryDto: UpdateCategoryDto,
+  ) {
+    return this.categoryService.updateCategory(id, updateCategoryDto);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Delete an unused category (Admin only)' })
+  @ApiParam({ name: 'id', description: 'Category ID (UUID)' })
+  @ApiResponse({ status: 200, description: 'Category deleted.' })
+  @ApiResponse({ status: 404, description: 'Category does not exist.' })
+  @ApiResponse({ status: 409, description: 'Category still has programs.' })
+  async deleteCategory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.categoryService.deleteCategory(id);
   }
 
   @Get()
