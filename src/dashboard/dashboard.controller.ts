@@ -45,8 +45,8 @@ export class DashboardController {
         ],
         creditBalance: {
           credits: 100,
-          nairaEquivalent: 1000,
-          conversionRate: '1 Credit = ₦10 (10 Credits = ₦100)',
+          usdEquivalent: 100,
+          conversionRate: '1 Credit = $1',
         },
         upcomingLiveSessions: [
           {

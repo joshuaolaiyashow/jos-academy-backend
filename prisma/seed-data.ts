@@ -90,7 +90,7 @@ export const SEED_COURSES: SeedCourse[] = [
     durationType: 'weeks',
     targetLevel: 'Foundation',
     maxCohortSize: 30,
-    tuitionFee: 50000,
+    tuitionFee: 50,
     heroImageName: unsplash('photo-1517694712202-14dd9538aa97'),
     modules: [
       {
@@ -205,7 +205,7 @@ export const SEED_COURSES: SeedCourse[] = [
     durationType: 'weeks',
     targetLevel: 'Foundation',
     maxCohortSize: 40,
-    tuitionFee: 15000,
+    tuitionFee: 15,
     heroImageName: unsplash('photo-1485827404703-89b55fcc595e'),
     modules: [
       {
@@ -285,7 +285,7 @@ export const SEED_COURSES: SeedCourse[] = [
     durationType: 'weeks',
     targetLevel: 'Intermediate',
     maxCohortSize: 30,
-    tuitionFee: 30000,
+    tuitionFee: 30,
     heroImageName: unsplash('photo-1518770660439-4636190af475'),
     modules: [
       {
@@ -363,7 +363,7 @@ export const SEED_COURSES: SeedCourse[] = [
     durationType: 'weeks',
     targetLevel: 'Foundation',
     maxCohortSize: 40,
-    tuitionFee: 20000,
+    tuitionFee: 20,
     heroImageName: unsplash('photo-1436491865332-7a61a109cc05'),
     modules: [
       {
@@ -442,7 +442,7 @@ export const SEED_COURSES: SeedCourse[] = [
     durationType: 'Months',
     targetLevel: 'Advanced',
     maxCohortSize: 20,
-    tuitionFee: 60000,
+    tuitionFee: 60,
     heroImageName: unsplash('photo-1446776811953-b23d57bd21aa'),
     modules: [
       {
@@ -521,7 +521,7 @@ export const SEED_COURSES: SeedCourse[] = [
     durationType: 'weeks',
     targetLevel: 'Foundation',
     maxCohortSize: 50,
-    tuitionFee: 25000,
+    tuitionFee: 25,
     heroImageName: unsplash('photo-1555949963-ff9fe0c870eb'),
     modules: [
       {
@@ -599,7 +599,7 @@ export const SEED_COURSES: SeedCourse[] = [
     durationType: 'weeks',
     targetLevel: 'Intermediate',
     maxCohortSize: 30,
-    tuitionFee: 40000,
+    tuitionFee: 40,
     heroImageName: unsplash('photo-1677442136019-21780ecad995'),
     modules: [
       {

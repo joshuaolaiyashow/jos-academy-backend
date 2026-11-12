@@ -83,7 +83,7 @@ export const seedCourse = async (
       durationType: 'weeks',
       targetLevel: 'Foundation',
       maxCohortSize: 30,
-      tuitionFee: 10000,
+      tuitionFee: 100_000,
       creatorId: ownerId,
       modules: {
         create: {

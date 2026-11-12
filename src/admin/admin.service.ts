@@ -21,7 +21,7 @@ import {
   UserRole,
 } from '../generated/prisma/client';
 import { ENROLLMENT_ACCESS_STATUSES } from '../enrollment/enrollment-access';
-import { NAIRA_PER_CREDIT } from '../credit/credit.service';
+import { USD_PER_CREDIT } from '../credit/credit.service';
 import { pageMeta, toPrismaPage } from '../utils/pagination';
 import { AdminUserStatus } from './dto/update-user-status.dto';
 import { CourseReviewDecision } from './dto/review-course.dto';
@@ -599,7 +599,7 @@ export class AdminService {
     const revenueByCourseId = new Map(
       revenue.map((entry) => [
         entry.courseId,
-        -(entry._sum.amount ?? 0) * NAIRA_PER_CREDIT,
+        -(entry._sum.amount ?? 0) * USD_PER_CREDIT,
       ]),
     );
 

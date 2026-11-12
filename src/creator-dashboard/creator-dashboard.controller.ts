@@ -116,7 +116,7 @@ export class CreatorDashboardController {
   @Get('earnings')
   @ApiOperation({
     summary:
-      "Gross revenue (NGN) from credit spend on the creator's programs, net of refunds",
+      "Gross revenue (USD) from credit spend on the creator's programs, net of refunds",
   })
   async getEarnings(@Req() req: AuthenticatedRequest) {
     return this.creatorEarnings.getEarnings(req.user.id);

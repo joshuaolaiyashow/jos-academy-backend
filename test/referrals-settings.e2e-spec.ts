@@ -147,7 +147,7 @@ describe('Referrals, email preferences and account deletion (e2e)', () => {
         isAvailable: true,
       });
 
-      // seedCourse: $10,000 tuition at 10 credits per dollar -> 100,000 credits, so 5% is 5,000.
+      // seedCourse: $100,000 tuition at 1 credit per dollar -> 100,000 credits, so 5% is 5,000.
       const first = await seedCourse(app, referrer.id, 1);
       const purchase = await http()
         .post('/enrollments/purchase')

@@ -45,7 +45,7 @@ export class EnrollmentController {
         moduleId: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
         creditsDeducted: 1000,
         remainingBalance: 4000,
-        remainingNairaEquivalent: 40000,
+        remainingUsdEquivalent: 4000,
         reference: 'JOS-PUR-1725700000000-A1B2C3',
         enrollmentId: 'c3d4e5f6-a7b8-9012-cdef-123456789012',
       },

@@ -171,7 +171,7 @@ describe('Self-registration role lock and discount/referral double-spend guards 
       ]);
 
       const discountedAmounts = [first, second]
-        .map((response) => response.body.referralDiscountAmountInNaira)
+        .map((response) => response.body.referralDiscountAmountInUsd)
         .sort((a: number, b: number) => a - b);
       // Both requests succeed (a top-up never needs a code), but only one carries the referral discount.
       expect(discountedAmounts).toEqual([0, expect.any(Number)]);

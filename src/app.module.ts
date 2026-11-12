@@ -16,6 +16,7 @@ import { CategoryModule } from './category/category.module';
 import { PaymentModule } from './payment/payment.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { CreditModule } from './credit/credit.module';
+import { CurrencyModule } from './currency/currency.module';
 import { DiscountModule } from './discount/discount.module';
 import { ReferralModule } from './referral/referral.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
@@ -58,6 +59,7 @@ import { auditContextMiddleware } from './audit/audit-context';
     PaymentModule,
     EnrollmentModule,
     CreditModule,
+    CurrencyModule,
     DiscountModule,
     ReferralModule,
     OnboardingModule,

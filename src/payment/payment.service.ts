@@ -7,9 +7,12 @@ import {
 import { createHmac, timingSafeEqual } from 'crypto';
 import { getErrorMessage } from '../utils';
 
+/** Needs USD enabled on the Paystack account. */
+const PAYSTACK_CURRENCY = 'USD';
+
 export interface InitializePaymentOptions {
   email: string;
-  amount: number; // Amount in Naira (will be converted to kobo automatically)
+  amount: number; // Amount in USD (converted to cents automatically)
   reference?: string;
   callbackUrl?: string;
   channels?: string[];
@@ -34,7 +37,7 @@ export interface PaystackVerifyResponse {
     domain: string;
     status: 'success' | 'failed' | 'abandoned' | string;
     reference: string;
-    amount: number; // Amount in kobo
+    amount: number; // Amount in cents
     message: string | null;
     gateway_response: string;
     paid_at: string;
@@ -96,19 +99,20 @@ export class PaymentService {
 
   /**
    * Initialize a Paystack payment transaction
-   * @param options Payment initialization options (email, amount in Naira, etc.)
+   * @param options Payment initialization options (email, amount in USD, etc.)
    * @returns Authorization URL and reference to complete payment
    */
   async initializePayment(
     options: InitializePaymentOptions,
   ): Promise<PaystackInitResponse['data']> {
     try {
-      // Convert Naira to Kobo (Paystack expects amount in Kobo)
-      const amountInKobo = Math.round(options.amount * 100);
+      // Paystack expects the amount in the currency subunit (cents)
+      const amountInCents = Math.round(options.amount * 100);
 
       const payload = {
         email: options.email,
-        amount: amountInKobo,
+        amount: amountInCents,
+        currency: PAYSTACK_CURRENCY,
         reference: options.reference,
         callback_url: options.callbackUrl || process.env.PAYSTACK_CALLBACK_URL,
         channels: options.channels,
@@ -173,7 +177,7 @@ export class PaymentService {
       }
 
       this.logger.log(
-        `✅ Transaction ${reference} status: ${data.data.status} (Amount: ₦${data.data.amount / 100})`,
+        `✅ Transaction ${reference} status: ${data.data.status} (Amount: $${data.data.amount / 100})`,
       );
       return data.data;
     } catch (error: unknown) {

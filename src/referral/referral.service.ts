@@ -34,7 +34,7 @@ export class ReferralService {
   }
 
   /**
-   * Naira/credits off `amount` if this user still has their referee discount.
+   * USD/credits off `amount` if this user still has their referee discount.
    * Only a preview — the purchase must `claimDiscount` for it to stick.
    */
   async discountFor(

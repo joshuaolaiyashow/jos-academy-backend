@@ -18,7 +18,7 @@ import {
 } from './e2e-helpers';
 
 const SECRET_VIDEO_URL = 'https://cdn.test/secret/master.m3u8';
-// $10,000 tuition on a one-module program -> 100,000 credits for full access.
+// $100,000 tuition on a one-module program -> 100,000 credits for full access.
 const FULL_COURSE_CREDITS = 100_000;
 
 describe('Lesson paywall, credit double-spend and completion integrity (e2e)', () => {

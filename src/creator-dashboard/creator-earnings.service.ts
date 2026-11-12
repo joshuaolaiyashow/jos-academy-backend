@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditTransactionType } from '../generated/prisma/client';
-import { NAIRA_PER_CREDIT } from '../credit/credit.service';
+import { USD_PER_CREDIT } from '../credit/credit.service';
 
 const REVENUE_TRANSACTION_TYPES = [
   CreditTransactionType.COURSE_PURCHASE,
@@ -23,7 +23,7 @@ const startOfUtcMonth = (monthsAgo: number): Date => {
 
 /**
  * Gross revenue from learners' credit spend on the creator's programs, in
- * naira. Purchases are stored as negative credit amounts and refunds as
+ * USD. Purchases are stored as negative credit amounts and refunds as
  * positive, so revenue is simply the negated sum. No revenue share or payouts
  * are applied yet.
  */
@@ -48,7 +48,7 @@ export class CreatorEarningsService {
 
     const thisMonthStart = startOfUtcMonth(0);
     const lastMonthStart = startOfUtcMonth(1);
-    const toNaira = (credits: number): number => -credits * NAIRA_PER_CREDIT;
+    const toUsd = (credits: number): number => -credits * USD_PER_CREDIT;
 
     const byCourse = new Map<
       string,
@@ -66,14 +66,14 @@ export class CreatorEarningsService {
 
     for (const transaction of transactions) {
       if (!transaction.course) continue;
-      const naira = toNaira(transaction.amount);
+      const usd = toUsd(transaction.amount);
       const isThisMonth = transaction.createdAt >= thisMonthStart;
       const isLastMonth =
         !isThisMonth && transaction.createdAt >= lastMonthStart;
 
-      totalEarnings += naira;
-      if (isThisMonth) earningsThisMonth += naira;
-      if (isLastMonth) earningsLastMonth += naira;
+      totalEarnings += usd;
+      if (isThisMonth) earningsThisMonth += usd;
+      if (isLastMonth) earningsLastMonth += usd;
 
       const entry = byCourse.get(transaction.course.id) ?? {
         courseId: transaction.course.id,
@@ -82,15 +82,15 @@ export class CreatorEarningsService {
         totalAmount: 0,
         amountThisMonth: 0,
       };
-      entry.totalAmount += naira;
-      if (isThisMonth) entry.amountThisMonth += naira;
+      entry.totalAmount += usd;
+      if (isThisMonth) entry.amountThisMonth += usd;
       if (PURCHASE_TYPES.includes(transaction.type))
         entry.buyers.add(transaction.userId);
       byCourse.set(transaction.course.id, entry);
     }
 
     return {
-      currency: 'NGN',
+      currency: 'USD',
       totalEarnings,
       earningsThisMonth,
       earningsLastMonth,

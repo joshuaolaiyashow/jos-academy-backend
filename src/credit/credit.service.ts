@@ -19,13 +19,10 @@ import {
 } from '../generated/prisma/client';
 import { randomBytes } from 'crypto';
 
-// Conversion rate constant: 10 credits = 100 Naira (1 credit = 10 Naira)
-export const NAIRA_PER_CREDIT = 10;
+/** $1 buys 1 credit. Top-ups are charged in USD. */
+export const USD_PER_CREDIT = 1;
 /** Smallest top-up a learner can buy. */
-export const MIN_CREDIT_PURCHASE = 50;
-
-// Program pricing: tuition is set in USD and converted at 100 credits = $10.
-export const CREDITS_PER_USD = 10;
+export const MIN_CREDIT_PURCHASE = 10;
 
 @Injectable()
 export class CreditService {
@@ -41,7 +38,7 @@ export class CreditService {
 
   /**
    * Initiate Credit Purchase via Paystack
-   * 10 Credits = ₦100 (1 Credit = ₦10)
+   * 1 Credit = $1
    */
   async buyCredits(userId: string, dto: BuyCreditsDto) {
     const { credits, discountCode } = dto;
@@ -53,7 +50,7 @@ export class CreditService {
       throw new NotFoundException('User not found');
     }
 
-    const fullPriceInNaira = credits * NAIRA_PER_CREDIT;
+    const fullPriceInUsd = credits * USD_PER_CREDIT;
     const reference = `JOS-CRD-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
 
     // A code's redemption isn't recorded until this top-up is paid, so without
@@ -61,7 +58,7 @@ export class CreditService {
     // maxRedemptions/perUserLimit check. Locking the campaign row (and doing
     // the whole check-then-create in one transaction, before the Paystack
     // call) keeps concurrent checkouts from ever both winning that race.
-    const { discount, referralDiscount, amountInNaira, payment } =
+    const { discount, referralDiscount, amountInUsd, payment } =
       await this.prisma.$transaction(async (tx) => {
         // Locks this user's row first, so two of their own checkouts opened back to
         // back (discounted or referral) are serialized rather than both reading the
@@ -83,22 +80,22 @@ export class CreditService {
               userId,
               discountCode,
               DiscountTarget.CREDIT_TOP_UP,
-              fullPriceInNaira,
+              fullPriceInUsd,
               tx,
             )
           : null;
         // The referee discount never stacks with a code; it waits for a purchase without one.
         const referralDiscount = discount
           ? 0
-          : await this.referrals.discountFor(userId, fullPriceInNaira, tx);
-        const amountInNaira = discount
+          : await this.referrals.discountFor(userId, fullPriceInUsd, tx);
+        const amountInUsd = discount
           ? discount.finalAmount
-          : fullPriceInNaira - referralDiscount;
+          : fullPriceInUsd - referralDiscount;
 
         const payment = await tx.payment.create({
           data: {
             userId,
-            amount: amountInNaira,
+            amount: amountInUsd,
             credits,
             reference,
             status: PaymentStatus.PENDING,
@@ -109,25 +106,25 @@ export class CreditService {
           },
         });
 
-        return { discount, referralDiscount, amountInNaira, payment };
+        return { discount, referralDiscount, amountInUsd, payment };
       });
 
     // Initialize Paystack checkout
     const paystackData = await this.paymentService.initializePayment({
       email: user.email,
-      amount: amountInNaira,
+      amount: amountInUsd,
       reference,
       metadata: {
         userId,
         paymentId: payment.id,
         type: 'CREDIT_TOP_UP',
         credits,
-        amountInNaira,
+        amountInUsd,
       },
     });
 
     this.logger.log(
-      `💳 Credit top-up initiated for ${user.email}: ${credits} credits (₦${amountInNaira}), Ref: ${reference}`,
+      `💳 Credit top-up initiated for ${user.email}: ${credits} credits ($${amountInUsd}), Ref: ${reference}`,
     );
 
     return {
@@ -136,11 +133,11 @@ export class CreditService {
       accessCode: paystackData.access_code,
       reference,
       credits,
-      amountInNaira,
-      originalAmountInNaira: fullPriceInNaira,
-      discountAmountInNaira: discount?.discountAmount ?? 0,
-      referralDiscountAmountInNaira: referralDiscount,
-      rate: `1 Credit = ₦${NAIRA_PER_CREDIT}`,
+      amountInUsd,
+      originalAmountInUsd: fullPriceInUsd,
+      discountAmountInUsd: discount?.discountAmount ?? 0,
+      referralDiscountAmountInUsd: referralDiscount,
+      rate: `1 Credit = $${USD_PER_CREDIT}`,
     };
   }
 
@@ -201,7 +198,7 @@ export class CreditService {
     }
 
     const creditsToAdd =
-      payment.credits || Math.floor(payment.amount / NAIRA_PER_CREDIT);
+      payment.credits || Math.floor(payment.amount / USD_PER_CREDIT);
 
     // Atomically increment user credits and record transaction
     const result = await this.prisma.$transaction(async (tx) => {
@@ -254,7 +251,7 @@ export class CreditService {
           amount: creditsToAdd,
           balanceAfter: updatedUser.credits,
           type: CreditTransactionType.TOP_UP,
-          description: `Wallet top-up of ${creditsToAdd} credits via Paystack (₦${payment.amount})`,
+          description: `Wallet top-up of ${creditsToAdd} credits via Paystack ($${payment.amount})`,
           reference,
         },
       });
@@ -283,7 +280,7 @@ export class CreditService {
       message: 'Credits added to wallet successfully!',
       creditsAdded: creditsToAdd,
       currentBalance: result.user.credits,
-      nairaEquivalent: result.user.credits * NAIRA_PER_CREDIT,
+      usdEquivalent: result.user.credits * USD_PER_CREDIT,
       reference,
     };
   }
@@ -327,8 +324,8 @@ export class CreditService {
 
     return {
       credits: user.credits,
-      nairaEquivalent: user.credits * NAIRA_PER_CREDIT,
-      conversionRate: `1 Credit = ₦${NAIRA_PER_CREDIT} (10 Credits = ₦100)`,
+      usdEquivalent: user.credits * USD_PER_CREDIT,
+      conversionRate: `1 Credit = $${USD_PER_CREDIT}`,
     };
   }
 

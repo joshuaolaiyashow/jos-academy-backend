@@ -16,7 +16,7 @@ export class ValidateDiscountDto {
   @ApiProperty({
     example: 1000,
     description:
-      'Price before discount: Naira for CREDIT_TOP_UP, credits for COURSE_PURCHASE',
+      'Price before discount: USD for CREDIT_TOP_UP, credits for COURSE_PURCHASE',
   })
   @Type(() => Number)
   @IsInt()

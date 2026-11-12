@@ -18,7 +18,7 @@ import {
   CourseStatus,
 } from '../generated/prisma/client';
 import { randomBytes } from 'crypto';
-import { CREDITS_PER_USD, NAIRA_PER_CREDIT } from '../credit/credit.service';
+import { USD_PER_CREDIT } from '../credit/credit.service';
 import { MODULE_ORDER_BY } from '../course-module/module-order';
 import {
   ENROLLMENT_ACCESS_STATUSES,
@@ -42,7 +42,7 @@ export class EnrollmentService {
    * Calculate course and module credit requirements
    */
   calculateCourseCredits(tuitionFee: number): number {
-    return Math.ceil(tuitionFee * CREDITS_PER_USD);
+    return Math.ceil(tuitionFee / USD_PER_CREDIT);
   }
 
   /**
@@ -190,9 +190,9 @@ export class EnrollmentService {
         requiredCredits,
         availableCredits: user.credits,
         shortByCredits: shortBy,
-        requiredNaira: requiredCredits * NAIRA_PER_CREDIT,
-        availableNaira: user.credits * NAIRA_PER_CREDIT,
-        shortByNaira: shortBy * NAIRA_PER_CREDIT,
+        requiredUsd: requiredCredits * USD_PER_CREDIT,
+        availableUsd: user.credits * USD_PER_CREDIT,
+        shortByUsd: shortBy * USD_PER_CREDIT,
         action: 'Please top up your wallet credits via POST /credits/buy',
       });
     }
@@ -367,7 +367,7 @@ export class EnrollmentService {
       discountCredits: result.discountAmount,
       referralDiscountCredits: referralDiscount,
       remainingBalance: result.user.credits,
-      remainingNairaEquivalent: result.user.credits * NAIRA_PER_CREDIT,
+      remainingUsdEquivalent: result.user.credits * USD_PER_CREDIT,
       reference: txReference,
       enrollmentId: result.enrollment.id,
     };

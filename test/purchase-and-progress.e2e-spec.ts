@@ -60,17 +60,17 @@ describe('Top-up minimum, multi-module purchase and lesson completion gate (e2e)
     await app.close();
   });
 
-  it('rejects credit top-ups under 50 credits', async () => {
+  it('rejects credit top-ups under 10 credits', async () => {
     const response = await http()
       .post('/credits/buy')
       .set(auth(learner))
-      .send({ credits: 49 })
+      .send({ credits: 9 })
       .expect(400);
-    expect(JSON.stringify(response.body)).toContain('50 credits');
+    expect(JSON.stringify(response.body)).toContain('10 credits');
   });
 
   it('unlocks several modules in one purchase at the per-module price', async () => {
-    // $10,000 tuition -> 100,000 credits over 3 modules -> 33,334 each.
+    // $100,000 tuition -> 100,000 credits over 3 modules -> 33,334 each.
     const response = await http()
       .post('/enrollments/purchase')
       .set(auth(learner))

@@ -41,7 +41,7 @@ export class CreditController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: 'Buy credits via Paystack (10 Credits = ₦100, 1 Credit = ₦10)',
+    summary: 'Buy credits via Paystack (1 Credit = $1)',
     description:
       'Initiates a Paystack checkout transaction for purchasing platform credits. Redirect the user to authorizationUrl.',
   })
@@ -55,8 +55,8 @@ export class CreditController {
         accessCode: 'xxxxxx',
         reference: 'JOS-CRD-1725700000000-A1B2C3D4',
         credits: 100,
-        amountInNaira: 1000,
-        rate: '1 Credit = ₦10',
+        amountInUsd: 100,
+        rate: '1 Credit = $1',
       },
     },
   })
@@ -148,7 +148,7 @@ export class CreditController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: 'Get the logged-in student’s credit balance & Naira value',
+    summary: 'Get the logged-in student’s credit balance & USD value',
   })
   @ApiResponse({
     status: 200,
@@ -156,8 +156,8 @@ export class CreditController {
     schema: {
       example: {
         credits: 100,
-        nairaEquivalent: 1000,
-        conversionRate: '1 Credit = ₦10 (10 Credits = ₦100)',
+        usdEquivalent: 100,
+        conversionRate: '1 Credit = $1',
       },
     },
   })

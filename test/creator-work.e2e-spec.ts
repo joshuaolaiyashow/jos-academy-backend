@@ -727,16 +727,16 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
         .set(auth(creator))
         .expect(200);
       expect(response.body).toMatchObject({
-        currency: 'NGN',
-        totalEarnings: 16500,
-        earningsThisMonth: 12500,
-        earningsLastMonth: 4000,
+        currency: 'USD',
+        totalEarnings: 1650,
+        earningsThisMonth: 1250,
+        earningsLastMonth: 400,
         breakdown: [
           expect.objectContaining({
             courseId,
             paidStudentsCount: 2,
-            totalAmount: 16500,
-            amountThisMonth: 12500,
+            totalAmount: 1650,
+            amountThisMonth: 1250,
           }),
         ],
       });
@@ -758,7 +758,7 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
     expect(response.body.stats).toEqual({
       studentsEnrolled: 2,
       completedCount: 0,
-      totalRevenue: 16500,
+      totalRevenue: 1650,
       sessionsCompleted: 0,
       sessionsTotal: 0,
     });
@@ -783,7 +783,7 @@ describe('Creator assignments, projects and earnings (e2e)', () => {
     expect(row).toMatchObject({
       id: courseId,
       lessonsCount: 1,
-      totalRevenue: 16500,
+      totalRevenue: 1650,
     });
     expect(row.students).toBeUndefined();
     expect(row.modules).toBeUndefined();

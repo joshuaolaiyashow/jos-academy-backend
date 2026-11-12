@@ -7,7 +7,7 @@ export class BuyCreditsDto {
   @ApiProperty({
     example: 100,
     description:
-      'Number of credits to purchase (10 Credits = ₦100, i.e. 1 Credit = ₦10)',
+      'Number of credits to purchase (1 Credit = $1)',
     minimum: MIN_CREDIT_PURCHASE,
   })
   @Type(() => Number)

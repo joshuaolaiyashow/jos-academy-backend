@@ -425,10 +425,10 @@ model Payment {
   enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
 
   discountCampaignId     String?
-  discountAmount         Int? // Naira saved by a discount code on this payment
-  referralDiscountAmount Int? // Naira saved by the one-time referee discount
+  discountAmount         Int? // USD saved by a discount code on this payment
+  referralDiscountAmount Int? // USD saved by the one-time referee discount
 
-  amount    Int // Amount in Naira (after any discount)
+  amount    Int // Amount in USD (after any discount)
   credits   Int? // Amount in Credits (for top ups)
   reference String        @unique // Paystack transaction reference
   status    PaymentStatus @default(PENDING)
@@ -638,7 +638,7 @@ model DiscountCampaignInvite {
   @@index([userId])
 }
 
-// One row per use of a campaign. Amounts are Naira for CREDIT_TOP_UP and
+// One row per use of a campaign. Amounts are USD for CREDIT_TOP_UP and
 // credits for COURSE_PURCHASE.
 model DiscountRedemption {
   id             String           @id @default(uuid())

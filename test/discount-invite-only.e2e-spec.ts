@@ -95,7 +95,7 @@ describe('Invite-only discount campaigns (e2e)', () => {
       .set(auth(invited))
       .send({ credits: 1000, discountCode: code })
       .expect(201);
-    expect(response.body.discountAmountInNaira).toBeGreaterThan(0);
+    expect(response.body.discountAmountInUsd).toBeGreaterThan(0);
   });
 
   it('refuses the code for someone not on the list, with the same message as an unknown code', async () => {
