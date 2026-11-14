@@ -1,11 +1,16 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
+import {
+  PERSON_NAME_MESSAGE,
+  PERSON_NAME_PATTERN,
+} from '../../common/person-name';
 import { AvailabilityType } from '../../generated/prisma/client';
 
 export class UpdateProfileDto {
   @ApiPropertyOptional({ example: 'Jane Doe', description: 'Full name' })
   @IsOptional()
   @IsString()
+  @Matches(PERSON_NAME_PATTERN, { message: PERSON_NAME_MESSAGE })
   name?: string;
 
   @ApiPropertyOptional({

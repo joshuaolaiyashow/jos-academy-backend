@@ -6,7 +6,12 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
 } from 'class-validator';
+import {
+  PERSON_NAME_MESSAGE,
+  PERSON_NAME_PATTERN,
+} from '../../common/person-name';
 import { AvailabilityType } from '../../generated/prisma/client';
 
 export class CreateCreatorDto {
@@ -16,6 +21,7 @@ export class CreateCreatorDto {
   })
   @IsString({ message: 'Name must be a string' })
   @IsNotEmpty({ message: 'Full name is required' })
+  @Matches(PERSON_NAME_PATTERN, { message: PERSON_NAME_MESSAGE })
   name: string;
 
   @ApiProperty({

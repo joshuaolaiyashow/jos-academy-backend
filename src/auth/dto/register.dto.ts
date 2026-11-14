@@ -6,7 +6,12 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  Matches,
 } from 'class-validator';
+import {
+  PERSON_NAME_MESSAGE,
+  PERSON_NAME_PATTERN,
+} from '../../common/person-name';
 import { UserRole } from '../../generated/prisma/client';
 import { SELF_SIGNUP_ROLES, type SelfSignupRole } from '../auth.constants';
 
@@ -25,6 +30,7 @@ export class RegisterDto {
   })
   @IsString({ message: 'Name must be a string' })
   @IsNotEmpty({ message: 'Name is required' })
+  @Matches(PERSON_NAME_PATTERN, { message: PERSON_NAME_MESSAGE })
   name: string;
 
   @ApiProperty({
