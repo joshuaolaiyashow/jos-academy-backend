@@ -16,9 +16,6 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ListProgramsQueryDto } from '../admin/dto/list-programs-query.dto';
 import { AdminService } from '../admin/admin.service';
 import { AuditService } from '../audit/audit.service';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { UpdateDiscountCampaignDto } from '../discount/dto/create-discount-campaign.dto';
 import { DiscountService } from '../discount/discount.service';
@@ -31,6 +28,7 @@ import {
   WorkspaceCreateCampaignDto,
   WorkspaceProgramReviewDto,
 } from './dto/workspace.dto';
+import { WorkspaceAuthGuard } from './workspace-auth.guard';
 import { WORKSPACE_ADMIN_PATH } from './workspace.constants';
 import {
   findRecord,
@@ -47,8 +45,7 @@ import {
 @ApiTags('JOS Workspace')
 @ApiBearerAuth('JWT-auth')
 @Controller(WORKSPACE_ADMIN_PATH)
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@UseGuards(WorkspaceAuthGuard)
 export class WorkspaceController {
   constructor(
     private readonly admin: AdminService,

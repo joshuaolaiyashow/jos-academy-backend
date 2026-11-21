@@ -1,4 +1,7 @@
+import { createServer, type Server } from 'node:http';
+
 import { INestApplication } from '@nestjs/common';
+import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from 'jose';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -13,6 +16,25 @@ import {
   type SeededUser,
 } from './e2e-helpers';
 
+const JWKS_PORT = 4792;
+const KEY_ID = 'test-key';
+const KEYCLOAK_SUB = '11111111-1111-4111-8111-111111111111';
+
+let privateKey: KeyLike;
+let jwksServer: Server;
+
+const asWorkspace = async (roles: string[], audience = 'academy-api') => ({
+  Authorization: `Bearer ${await new SignJWT({
+    resource_access: { 'academy-api': { roles } },
+  })
+    .setProtectedHeader({ alg: 'RS256', kid: KEY_ID })
+    .setSubject(KEYCLOAK_SUB)
+    .setIssuer(process.env.KEYCLOAK_ISSUER!)
+    .setAudience(audience)
+    .setExpirationTime('5m')
+    .sign(privateKey)}`,
+});
+
 describe('JOS Workspace contract (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -22,6 +44,24 @@ describe('JOS Workspace contract (e2e)', () => {
   const http = () => request(app.getHttpServer());
 
   beforeAll(async () => {
+    const keys = await generateKeyPair('RS256');
+    privateKey = keys.privateKey;
+    const jwks = JSON.stringify({
+      keys: [
+        {
+          ...(await exportJWK(keys.publicKey)),
+          kid: KEY_ID,
+          alg: 'RS256',
+          use: 'sig',
+        },
+      ],
+    });
+    jwksServer = createServer((_req, res) =>
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(jwks),
+    );
+    await new Promise<void>((resolve) =>
+      jwksServer.listen(JWKS_PORT, '127.0.0.1', resolve),
+    );
     app = await createE2eApp();
     prisma = app.get(PrismaService);
     jest
@@ -32,11 +72,21 @@ describe('JOS Workspace contract (e2e)', () => {
   });
 
   afterAll(async () => {
+    jwksServer.close();
     await app.close();
   });
 
-  it('serves the manifest without a session', async () => {
-    const res = await http().get('/admin/workspace-manifest').expect(200);
+  it('serves the manifest only to a workspace token', async () => {
+    await http().get('/admin/workspace-manifest').expect(401);
+    await http().get('/admin/workspace-manifest').set(auth(admin)).expect(401);
+    await http()
+      .get('/admin/workspace-manifest')
+      .set(await asWorkspace([], 'some-other-api'))
+      .expect(401);
+    const res = await http()
+      .get('/admin/workspace-manifest')
+      .set(await asWorkspace([]))
+      .expect(200);
     expect(res.body.modules.map((m: { key: string }) => m.key)).toEqual([
       'programs',
       'students',
@@ -44,6 +94,40 @@ describe('JOS Workspace contract (e2e)', () => {
       'assessment',
       'audit-log',
     ]);
+  });
+
+  it('lets a workspace token act only within its module grants', async () => {
+    const viewer = await asWorkspace(['programs:view']);
+    await http().get('/workspace/admin/programs').set(viewer).expect(200);
+    await http().get('/workspace/admin/students').set(viewer).expect(403);
+    await http()
+      .post('/workspace/admin/campaigns')
+      .set(await asWorkspace(['campaigns:view']))
+      .send({})
+      .expect(403);
+    await http()
+      .get('/workspace/admin/audit-log')
+      .set(await asWorkspace(['audit-log:view']))
+      .expect(200);
+  });
+
+  it('records the Keycloak user as creator of a workspace-made campaign', async () => {
+    const res = await http()
+      .post('/workspace/admin/campaigns')
+      .set(await asWorkspace(['campaigns:manage']))
+      .send({
+        name: 'Workspace campaign',
+        code: 'WSKC10',
+        percentOff: 10,
+        appliesTo: 'ALL',
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 86_400_000).toISOString(),
+      })
+      .expect(201);
+    const stored = await prisma.discountCampaign.findUniqueOrThrow({
+      where: { id: res.body.data.id },
+    });
+    expect(stored.createdById).toBe(KEYCLOAK_SUB);
   });
 
   it('keeps the workspace routes admin-only', async () => {

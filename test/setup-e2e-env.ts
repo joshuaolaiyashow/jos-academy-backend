@@ -15,6 +15,10 @@ process.env.DATABASE_URL = testDatabaseUrl;
 process.env.DATABASE_SSL = 'false';
 process.env.JWT_SECRET = 'e2e-access-secret';
 process.env.JWT_REFRESH_SECRET = 'e2e-refresh-secret';
+// test/workspace.e2e-spec.ts serves this realm's signing keys itself.
+process.env.KEYCLOAK_ISSUER = 'http://127.0.0.1:4792/realms/test';
+process.env.KEYCLOAK_AUDIENCE = 'academy-api';
+delete process.env.KEYCLOAK_JWKS_URL;
 process.env.RESEND_API_KEY = 're_e2e_placeholder';
 process.env.APP_URL = 'http://frontend.test';
 // Live notifications fan out in-process; tests must never reach a shared Redis.
