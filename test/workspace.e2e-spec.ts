@@ -5,7 +5,11 @@ import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from 'jose';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
-import { CourseStatus, UserRole } from '../src/generated/prisma/client';
+import {
+  CourseStatus,
+  EnrollmentStatus,
+  UserRole,
+} from '../src/generated/prisma/client';
 import { NotificationService } from '../src/notification/notification.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import {
@@ -93,6 +97,12 @@ describe('JOS Workspace contract (e2e)', () => {
       'campaigns',
       'assessment',
       'audit-log',
+    ]);
+    expect(
+      res.body.audiences.map((a: { key: string; path: string }) => a.path),
+    ).toEqual([
+      '/workspace/audiences/students',
+      '/workspace/audiences/instructors',
     ]);
   });
 
@@ -234,6 +244,167 @@ describe('JOS Workspace contract (e2e)', () => {
     expect(missing.body).toEqual({
       message: 'Question not found',
       code: 'NOT_FOUND',
+    });
+  });
+
+  describe('broadcast audiences', () => {
+    const tag = `aud${Date.now()}`;
+    let exporter: Record<string, string>;
+    let programId: string;
+    let otherProgramId: string;
+    let optedOut: SeededUser;
+    let instructor: SeededUser;
+
+    const enrol = async (
+      label: string,
+      courseId: string,
+      status: EnrollmentStatus = EnrollmentStatus.ACTIVE,
+    ): Promise<SeededUser> => {
+      const user = await seedUser(app, `${tag}-${label}`, UserRole.USER);
+      await prisma.enrollment.create({
+        data: { userId: user.id, courseId, status },
+      });
+      return user;
+    };
+    const students = (params: string) =>
+      http().get(`/workspace/audiences/students?${params}`).set(exporter);
+
+    beforeAll(async () => {
+      exporter = await asWorkspace(['audiences:export']);
+      programId = (await seedCourse(app, creator.id, 1)).id;
+      otherProgramId = (await seedCourse(app, creator.id, 1)).id;
+      await enrol('a', programId);
+      await enrol('b', programId);
+      await enrol('c', otherProgramId);
+      optedOut = await enrol('opted-out', programId);
+      await prisma.user.update({
+        where: { id: optedOut.id },
+        data: { marketingOptOut: true },
+      });
+      const suspended = await enrol('suspended', programId);
+      await prisma.user.update({
+        where: { id: suspended.id },
+        data: { isSuspended: true },
+      });
+      await enrol('unpaid', programId, EnrollmentStatus.PENDING);
+      instructor = await seedUser(app, `${tag}-teacher`, UserRole.INSTRUCTOR);
+    });
+
+    it('needs a workspace token with audiences:export and nothing else', async () => {
+      await http().get('/workspace/audiences/students').expect(401);
+      await http()
+        .get('/workspace/audiences/students')
+        .set(auth(admin))
+        .expect(401);
+      const denied = await http()
+        .get('/workspace/audiences/instructors')
+        .set(await asWorkspace(['students:manage', 'programs:manage']))
+        .expect(403);
+      expect(denied.body.code).toBe('FORBIDDEN');
+      await http()
+        .post('/workspace/audiences/students/unsubscribe')
+        .set(await asWorkspace(['students:manage']))
+        .send({ email: optedOut.email })
+        .expect(403);
+    });
+
+    it('pages enrolled, opted-in students by cursor with a total', async () => {
+      const first = await students(`search=${tag}&limit=2`).expect(200);
+      expect(first.body.meta.total).toBe(3);
+      expect(first.body.data).toHaveLength(2);
+      expect(first.body.meta.nextCursor).toEqual(expect.any(String));
+      const second = await students(
+        `search=${tag}&limit=2&cursor=${first.body.meta.nextCursor}`,
+      ).expect(200);
+      expect(second.body.data).toHaveLength(1);
+      expect(second.body.meta).toEqual({ nextCursor: null, total: 3 });
+      const emails = [...first.body.data, ...second.body.data].map(
+        (member: { email: string }) => member.email,
+      );
+      expect(new Set(emails).size).toBe(3);
+      expect(emails).not.toContain(optedOut.email);
+      expect(first.body.data[0]).toEqual({
+        email: expect.any(String),
+        name: expect.any(String),
+      });
+    });
+
+    it('searches case-insensitively and matches wildcards literally', async () => {
+      const upper = await students(`search=${tag.toUpperCase()}`).expect(200);
+      expect(upper.body.meta.total).toBe(3);
+      const literal = await students(
+        `search=${encodeURIComponent(`${tag}%`)}`,
+      ).expect(200);
+      expect(literal.body.meta.total).toBe(0);
+    });
+
+    it('filters students by program and refuses an unknown one', async () => {
+      const cohort = await students(
+        `search=${tag}&program=${otherProgramId}`,
+      ).expect(200);
+      expect(cohort.body.meta.total).toBe(1);
+      expect(cohort.body.data[0].email).toContain(`${tag}-c-`);
+      const unknown = await students(
+        'program=00000000-0000-4000-8000-000000000000',
+      ).expect(400);
+      expect(unknown.body.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('lists instructors only, without a program filter', async () => {
+      const res = await http()
+        .get(`/workspace/audiences/instructors?search=${tag}`)
+        .set(exporter)
+        .expect(200);
+      expect(res.body.data).toEqual([
+        { email: instructor.email, name: `${tag}-teacher User` },
+      ]);
+      await http()
+        .get(`/workspace/audiences/instructors?program=${programId}`)
+        .set(exporter)
+        .expect(400);
+    });
+
+    it('includes opted-out users only when asked to', async () => {
+      const all = await students(`search=${tag}&includeOptedOut=true`).expect(
+        200,
+      );
+      expect(all.body.meta.total).toBe(4);
+      expect(
+        all.body.data.map((member: { email: string }) => member.email),
+      ).toContain(optedOut.email);
+    });
+
+    it('unsubscribes idempotently and says so for unknown emails', async () => {
+      const target = await enrol('leaver', programId);
+      const unsubscribe = (email: string) =>
+        http()
+          .post('/workspace/audiences/students/unsubscribe')
+          .set(exporter)
+          .send({ email })
+          .expect(200);
+
+      const first = await unsubscribe(target.email.toUpperCase());
+      expect(first.body.data).toEqual({
+        email: target.email.toUpperCase(),
+        unsubscribed: true,
+      });
+      const { marketingOptOutAt } = await prisma.user.findUniqueOrThrow({
+        where: { id: target.id },
+      });
+      expect(marketingOptOutAt).toBeInstanceOf(Date);
+
+      await unsubscribe(target.email);
+      const after = await prisma.user.findUniqueOrThrow({
+        where: { id: target.id },
+      });
+      expect(after.marketingOptOut).toBe(true);
+      expect(after.marketingOptOutAt).toEqual(marketingOptOutAt);
+
+      const unknown = await unsubscribe(`nobody-${tag}@e2e.test`);
+      expect(unknown.body.data.unsubscribed).toBe(false);
+
+      const list = await students(`search=${tag}`).expect(200);
+      expect(list.body.meta.total).toBe(3);
     });
   });
 });

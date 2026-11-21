@@ -10,7 +10,10 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { hasModuleGrant, verifyWorkspaceToken } from '../auth/keycloak-token';
 import { UserRole } from '../generated/prisma/client';
-import { WORKSPACE_ADMIN_PATH } from './workspace.constants';
+import {
+  AUDIENCE_EXPORT_ROLE,
+  WORKSPACE_ADMIN_PATH,
+} from './workspace.constants';
 
 const BEARER_PREFIX = 'Bearer ';
 const WORKSPACE_ADMIN_PREFIX = `/${WORKSPACE_ADMIN_PATH}/`;
@@ -74,6 +77,20 @@ export class WorkspaceTokenGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<Request>();
     if (!(await verifyWorkspaceToken(bearerToken(req)))) {
       throw new UnauthorizedException('Invalid or expired token');
+    }
+    return true;
+  }
+}
+
+/** Broadcast audiences: a JOS Workspace token holding `audiences:export`, and nothing else. */
+@Injectable()
+export class AudienceExportGuard implements CanActivate {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const req = context.switchToHttp().getRequest<Request>();
+    const identity = await verifyWorkspaceToken(bearerToken(req));
+    if (!identity) throw new UnauthorizedException('Invalid or expired token');
+    if (!identity.roles.includes(AUDIENCE_EXPORT_ROLE)) {
+      throw new ForbiddenException('You do not have permission to do this');
     }
     return true;
   }
