@@ -8,5 +8,6 @@ import { FileUploadModule } from '../file-upload/file-upload.module';
   imports: [PrismaModule, FileUploadModule],
   controllers: [OnboardingController],
   providers: [OnboardingService],
+  exports: [OnboardingService],
 })
 export class OnboardingModule {}

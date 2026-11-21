@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "key": "programs",
+      "label": "Programs",
+      "icon": "graduation-cap",
+      "path": "/workspace/admin/programs",
+      "operations": ["list", "read", "update"],
+      "fields": [
+        { "name": "name", "label": "Program", "type": "text", "list": true, "readOnly": true },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "select",
+          "required": true,
+          "list": true,
+          "options": [
+            { "value": "DRAFT", "label": "Draft" },
+            { "value": "PENDING_REVIEW", "label": "Pending review" },
+            { "value": "IN_REVIEW", "label": "In review" },
+            { "value": "ACTIVE", "label": "Approved" },
+            { "value": "REJECTED", "label": "Rejected" }
+          ]
+        },
+        { "name": "rejectionReason", "label": "Rejection reason", "type": "textarea" },
+        { "name": "shortDescription", "label": "Summary", "type": "textarea", "readOnly": true },
+        { "name": "tuitionFee", "label": "Tuition", "type": "money", "list": true, "readOnly": true },
+        { "name": "lessonsCount", "label": "Lessons", "type": "number", "list": true, "readOnly": true },
+        { "name": "rating", "label": "Rating", "type": "number", "readOnly": true },
+        { "name": "totalRevenue", "label": "Revenue", "type": "money", "readOnly": true },
+        { "name": "startsAt", "label": "Starts", "type": "datetime", "list": true, "readOnly": true },
+        { "name": "endsAt", "label": "Ends", "type": "datetime", "readOnly": true }
+      ],
+      "actions": [
+        {
+          "key": "start-review",
+          "label": "Start review",
+          "method": "PATCH",
+          "path": "/workspace/admin/programs/:id/start-review",
+          "confirm": "Start reviewing this program? The creator can't edit it until you approve or reject it."
+        }
+      ]
+    },
+    {
+      "key": "students",
+      "label": "Students",
+      "icon": "users",
+      "path": "/workspace/admin/students",
+      "sensitive": true,
+      "operations": ["list"],
+      "fields": [
+        { "name": "name", "label": "Name", "type": "text", "list": true, "readOnly": true },
+        { "name": "email", "label": "Email", "type": "email", "list": true, "readOnly": true },
+        { "name": "phone", "label": "Phone", "type": "text", "readOnly": true },
+        { "name": "country", "label": "Country", "type": "text", "list": true, "readOnly": true },
+        { "name": "credits", "label": "Credits", "type": "number", "readOnly": true },
+        { "name": "isSuspended", "label": "Suspended", "type": "boolean", "list": true, "readOnly": true },
+        { "name": "createdAt", "label": "Joined", "type": "datetime", "list": true, "readOnly": true }
+      ],
+      "actions": [
+        {
+          "key": "suspend",
+          "label": "Suspend",
+          "method": "PATCH",
+          "path": "/workspace/admin/students/:id/suspend",
+          "confirm": "Suspend this student? They won't be able to sign in."
+        },
+        {
+          "key": "reactivate",
+          "label": "Reactivate",
+          "method": "PATCH",
+          "path": "/workspace/admin/students/:id/reactivate"
+        }
+      ]
+    },
+    {
+      "key": "campaigns",
+      "label": "Campaigns",
+      "icon": "ticket",
+      "path": "/workspace/admin/campaigns",
+      "sensitive": true,
+      "operations": ["list", "read", "create", "update"],
+      "fields": [
+        { "name": "name", "label": "Name", "type": "text", "required": true, "list": true },
+        { "name": "code", "label": "Code", "type": "text", "required": true, "list": true },
+        { "name": "description", "label": "Description", "type": "textarea" },
+        { "name": "percentOff", "label": "% off", "type": "number", "required": true, "list": true },
+        {
+          "name": "appliesTo",
+          "label": "Applies to",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "ALL", "label": "Everything" },
+            { "value": "COURSE_PURCHASE", "label": "Program purchases" },
+            { "value": "CREDIT_TOP_UP", "label": "Credit top-ups" }
+          ]
+        },
+        { "name": "startsAt", "label": "Starts", "type": "datetime", "required": true, "list": true },
+        { "name": "endsAt", "label": "Ends", "type": "datetime", "required": true, "list": true },
+        { "name": "maxRedemptions", "label": "Max redemptions", "type": "number" },
+        { "name": "perUserLimit", "label": "Per-person limit", "type": "number" },
+        { "name": "isActive", "label": "Active", "type": "boolean", "list": true },
+        { "name": "isInviteOnly", "label": "Invite only", "type": "boolean", "readOnly": true },
+        { "name": "redemptionCount", "label": "Redemptions", "type": "number", "list": true, "readOnly": true },
+        { "name": "totalDiscountGiven", "label": "Discount given", "type": "money", "readOnly": true }
+      ]
+    },
+    {
+      "key": "assessment",
+      "label": "Assessment",
+      "icon": "clipboard-check",
+      "path": "/workspace/admin/assessment",
+      "operations": ["list", "read", "update", "delete"],
+      "fields": [
+        { "name": "subject", "label": "Subject", "type": "text", "required": true, "list": true },
+        { "name": "prompt", "label": "Question", "type": "textarea", "required": true, "list": true },
+        { "name": "order", "label": "Order", "type": "number", "list": true },
+        { "name": "isActive", "label": "Active", "type": "boolean", "list": true },
+        { "name": "updatedAt", "label": "Updated", "type": "datetime", "readOnly": true }
+      ]
+    },
+    {
+      "key": "audit-log",
+      "label": "Audit log",
+      "icon": "scroll",
+      "path": "/workspace/admin/audit-log",
+      "operations": ["list"],
+      "fields": [
+        { "name": "createdAt", "label": "When", "type": "datetime", "list": true, "readOnly": true },
+        { "name": "actorName", "label": "Who", "type": "text", "list": true, "readOnly": true },
+        { "name": "actorRole", "label": "Role", "type": "text", "readOnly": true },
+        { "name": "action", "label": "Action", "type": "text", "list": true, "readOnly": true },
+        { "name": "targetType", "label": "Target", "type": "text", "list": true, "readOnly": true },
+        { "name": "targetId", "label": "Target id", "type": "text", "readOnly": true },
+        { "name": "ip", "label": "IP", "type": "text", "readOnly": true },
+        { "name": "userAgent", "label": "User agent", "type": "text", "readOnly": true }
+      ]
+    }
+  ]
+}

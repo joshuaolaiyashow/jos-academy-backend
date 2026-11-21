@@ -36,6 +36,7 @@ import { DiscussionModule } from './discussion/discussion.module';
 import { AssignmentModule } from './assignment/assignment.module';
 import { CourseProjectModule } from './course-project/course-project.module';
 import { AuditModule } from './audit/audit.module';
+import { WorkspaceModule } from './workspace/workspace.module';
 import { auditContextMiddleware } from './audit/audit-context';
 
 @Module({
@@ -79,6 +80,7 @@ import { auditContextMiddleware } from './audit/audit-context';
     AssignmentModule,
     CourseProjectModule,
     AuditModule,
+    WorkspaceModule,
   ],
   controllers: [AppController],
   providers: [
