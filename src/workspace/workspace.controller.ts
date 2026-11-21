@@ -100,7 +100,20 @@ export class WorkspaceController {
       query.limit,
       query.search,
     );
-    return toWorkspacePage(students, meta);
+    // Only the manifest's fields: the admin student object nests them and carries payments and progress too.
+    return toWorkspacePage(
+      students.map((student) => ({
+        id: student.id,
+        name: student.name,
+        email: student.email,
+        phone: student.personalInfo.phone,
+        country: student.personalInfo.country,
+        credits: student.creditBalance,
+        isSuspended: student.status === 'suspended',
+        createdAt: student.personalInfo.dateJoined,
+      })),
+      meta,
+    );
   }
 
   @Patch('students/:id/suspend')
