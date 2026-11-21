@@ -249,13 +249,22 @@ export class AdminService {
    * `payments`, and `rewards` are capped at the most recent items to keep
    * the per-student fan-out bounded.
    */
-  async getStudents(page: number, limit: number) {
+  async getStudents(page: number, limit: number, search?: string) {
     const skip = (page - 1) * limit;
+    const where: Prisma.UserWhereInput = {
+      role: UserRole.USER,
+      OR: search
+        ? [
+            { name: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ]
+        : undefined,
+    };
 
     const [total, users] = await Promise.all([
-      this.prisma.user.count({ where: { role: UserRole.USER } }),
+      this.prisma.user.count({ where }),
       this.prisma.user.findMany({
-        where: { role: UserRole.USER },
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,

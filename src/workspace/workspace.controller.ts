@@ -91,13 +91,14 @@ export class WorkspaceController {
   }
 
   @Get('students')
-  @ApiOperation({ summary: 'Students (workspace); search is not supported' })
+  @ApiOperation({ summary: 'Students (workspace); search matches name or email' })
   async listStudents(
     @Query() query: PaginatedSearchQueryDto,
   ): Promise<WorkspacePage<unknown>> {
     const { students, ...meta } = await this.admin.getStudents(
       query.page,
       query.limit,
+      query.search,
     );
     return toWorkspacePage(students, meta);
   }
@@ -190,9 +191,9 @@ export class WorkspaceController {
   }
 
   @Get('audit-log')
-  @ApiOperation({ summary: 'Audit log (workspace); search is not supported' })
+  @ApiOperation({ summary: 'Audit log (workspace); search matches action or target' })
   async listAuditLog(
-    @Query() { search: _ignored, ...query }: WorkspaceAuditLogQueryDto,
+    @Query() query: WorkspaceAuditLogQueryDto,
   ): Promise<WorkspacePage<unknown>> {
     const { entries, ...meta } = await this.audit.list(query);
     return toWorkspacePage(entries, meta);

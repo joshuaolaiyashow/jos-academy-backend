@@ -68,13 +68,21 @@ export class AuditService {
     targetId,
     from,
     to,
+    search,
     ...pageParams
-  }: ListAuditLogsQueryDto) {
+  }: ListAuditLogsQueryDto & { search?: string }) {
     const where: Prisma.AuditLogWhereInput = {
       action,
       actorId,
       targetType,
       targetId,
+      OR: search
+        ? [
+            { action: { contains: search, mode: 'insensitive' } },
+            { targetType: { contains: search, mode: 'insensitive' } },
+            { targetId: { contains: search, mode: 'insensitive' } },
+          ]
+        : undefined,
       createdAt:
         from || to
           ? {
