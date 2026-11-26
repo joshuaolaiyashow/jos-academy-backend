@@ -35,10 +35,14 @@ import {
   verifyWebhookSignature,
   WEBHOOK_SIGNATURE_HEADER,
 } from './verify-webhook-signature';
+import {
+  buildLessonVideoUpdate,
+  TranscodeCallbackStatus,
+} from './transcode-callback-update';
 
 interface TranscodeCallbackBody {
   jobId: string;
-  status: 'ready' | 'failed';
+  status: TranscodeCallbackStatus;
   outputUrl?: string;
   error?: string;
   metadata?: { lessonId: string };
@@ -280,14 +284,7 @@ export class MediaController {
 
     await this.prisma.lesson.update({
       where: { id: lessonId },
-      data: {
-        videoUrl: body.status === 'ready' ? body.outputUrl : undefined,
-        videoProcessingStatus:
-          body.status === 'ready'
-            ? LessonVideoStatus.READY
-            : LessonVideoStatus.FAILED,
-        videoProcessingError: body.status === 'failed' ? body.error : null,
-      },
+      data: buildLessonVideoUpdate(body.status, body.outputUrl, body.error),
     });
 
     this.logger.log(

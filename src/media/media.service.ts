@@ -82,6 +82,8 @@ export class MediaService {
         outputType,
         destination: { prefix },
         callbackUrl,
+        // Asks for an early "playable" webhook once the low-resolution rungs are live.
+        notifyWhenPlayable: true,
         metadata,
       },
       { headers: this.headers },
