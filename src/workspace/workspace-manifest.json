@@ -138,5 +138,23 @@
         { "name": "userAgent", "label": "User agent", "type": "text", "readOnly": true }
       ]
     }
+  ],
+  "analytics": [
+    {"key": "total-students", "label": "Total students", "type": "stat", "path": "/workspace/admin/analytics/total-students"},
+    {"key": "new-students", "label": "New students", "type": "stat", "path": "/workspace/admin/analytics/new-students"},
+    {"key": "onboarding-completion", "label": "Finished onboarding (%)", "type": "stat", "path": "/workspace/admin/analytics/onboarding-completion"},
+    {"key": "revenue", "label": "Revenue (USD)", "type": "stat", "path": "/workspace/admin/analytics/revenue", "format": "money", "sensitive": true},
+    {"key": "enrolments", "label": "Paid enrolments", "type": "stat", "path": "/workspace/admin/analytics/enrolments"},
+    {"key": "lessons-completed", "label": "Lessons completed", "type": "stat", "path": "/workspace/admin/analytics/lessons-completed"},
+    {"key": "certificates", "label": "Certificates issued", "type": "stat", "path": "/workspace/admin/analytics/certificates"},
+    {"key": "failed-payments", "label": "Failed payments", "type": "stat", "path": "/workspace/admin/analytics/failed-payments"},
+    {"key": "average-rating", "label": "Average rating", "type": "stat", "path": "/workspace/admin/analytics/average-rating"},
+    {"key": "signups", "label": "Signups", "type": "timeseries", "path": "/workspace/admin/analytics/signups"},
+    {"key": "revenue-over-time", "label": "Revenue (USD)", "type": "timeseries", "path": "/workspace/admin/analytics/revenue-over-time", "format": "money", "sensitive": true},
+    {"key": "enrolments-over-time", "label": "Paid enrolments", "type": "timeseries", "path": "/workspace/admin/analytics/enrolments-over-time"},
+    {"key": "top-programs", "label": "Most enrolled programs", "type": "breakdown", "path": "/workspace/admin/analytics/top-programs"},
+    {"key": "revenue-by-program", "label": "Revenue by program (USD)", "type": "breakdown", "path": "/workspace/admin/analytics/revenue-by-program", "format": "money", "sensitive": true},
+    {"key": "signup-funnel", "label": "From signup to certificate", "type": "funnel", "path": "/workspace/admin/analytics/signup-funnel"},
+    {"key": "enrolments-by-status", "label": "Enrolments by status", "type": "breakdown", "path": "/workspace/admin/analytics/enrolments-by-status"}
   ]
 }
