@@ -1,0 +1,23 @@
+# CodeBuild: build the image (nest build runs inside it), push to ECR, hand the image URI to a later ECS deploy stage.
+# BUILD-ONLY pipeline: the container runs `prisma db push` on every start, so nothing deploys it automatically yet.
+# Needs: privileged mode on (Docker), env var ECR_REPO_URI set on the CodeBuild project.
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${ECR_REPO_URI%%/*}"
+      - TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
+  build:
+    commands:
+      - docker build -t "$ECR_REPO_URI:$TAG" -t "$ECR_REPO_URI:latest" .
+  post_build:
+    commands:
+      - docker push "$ECR_REPO_URI:$TAG"
+      - docker push "$ECR_REPO_URI:latest"
+      # "jos-app" is a guess: it must match the container name in the ECS task definition `jos-academy`.
+      - printf '[{"name":"jos-app","imageUri":"%s"}]' "$ECR_REPO_URI:$TAG" > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
