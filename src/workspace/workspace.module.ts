@@ -8,10 +8,7 @@ import { DiscountModule } from '../discount/discount.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WorkspaceAudiencesController } from './workspace-audiences.controller';
-import {
-  WorkspaceAnalyticsController,
-  WorkspaceFunnelPeopleController,
-} from './workspace-analytics.controller';
+import { WorkspaceAnalyticsController } from './workspace-analytics.controller';
 import { WorkspaceAnalyticsService } from './workspace-analytics.service';
 import { WorkspaceAudiencesService } from './workspace-audiences';
 import { WorkspaceManifestController } from './workspace-manifest.controller';
@@ -35,7 +32,6 @@ import { WorkspaceController } from './workspace.controller';
     WorkspaceRecordsController,
     WorkspaceAudiencesController,
     WorkspaceAnalyticsController,
-    WorkspaceFunnelPeopleController,
   ],
   providers: [
     WorkspaceAudiencesService,
