@@ -278,7 +278,12 @@
           "type": "boolean",
           "list": true,
           "readOnly": true,
-          "filter": true
+          "filter": true,
+          "filterLabel": "Status",
+          "filterOptions": {
+            "true": "Suspended",
+            "false": "Active"
+          }
         },
         {
           "name": "bio",
@@ -518,7 +523,12 @@
           "type": "boolean",
           "list": true,
           "readOnly": true,
-          "filter": true
+          "filter": true,
+          "filterLabel": "Status",
+          "filterOptions": {
+            "true": "Suspended",
+            "false": "Active"
+          }
         },
         {
           "name": "createdAt",
@@ -728,7 +738,12 @@
           "label": "Active",
           "type": "boolean",
           "list": true,
-          "filter": true
+          "filter": true,
+          "filterLabel": "Status",
+          "filterOptions": {
+            "true": "Active",
+            "false": "Paused"
+          }
         },
         {
           "name": "isInviteOnly",
