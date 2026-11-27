@@ -63,6 +63,34 @@ function bucketKeyForDate(date: Date): string {
   return `${date.getFullYear()}-${date.getMonth()}`;
 }
 
+const ADMIN_STUDENT_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  avatarUrl: true,
+  phone: true,
+  country: true,
+  bio: true,
+  credits: true,
+  isSuspended: true,
+  createdAt: true,
+  enrollments: {
+    select: {
+      id: true,
+      status: true,
+      createdAt: true,
+      course: {
+        select: {
+          id: true,
+          name: true,
+          shortDescription: true,
+          heroImageName: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.UserSelect;
+
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -249,10 +277,25 @@ export class AdminService {
    * `payments`, and `rewards` are capped at the most recent items to keep
    * the per-student fan-out bounded.
    */
-  async getStudents(page: number, limit: number, search?: string) {
+  async getStudent(id: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id, role: UserRole.USER },
+      select: ADMIN_STUDENT_SELECT,
+    });
+    if (!user) throw new NotFoundException('Student not found');
+    return this.buildAdminStudent(user);
+  }
+
+  async getStudents(
+    page: number,
+    limit: number,
+    search?: string,
+    isSuspended?: boolean,
+  ) {
     const skip = (page - 1) * limit;
     const where: Prisma.UserWhereInput = {
       role: UserRole.USER,
+      isSuspended,
       OR: search
         ? [
             { name: { contains: search, mode: 'insensitive' } },
@@ -268,33 +311,7 @@ export class AdminService {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatarUrl: true,
-          phone: true,
-          country: true,
-          bio: true,
-          credits: true,
-          isSuspended: true,
-          createdAt: true,
-          enrollments: {
-            select: {
-              id: true,
-              status: true,
-              createdAt: true,
-              course: {
-                select: {
-                  id: true,
-                  name: true,
-                  shortDescription: true,
-                  heroImageName: true,
-                },
-              },
-            },
-          },
-        },
+        select: ADMIN_STUDENT_SELECT,
       }),
     ]);
 
@@ -395,7 +412,7 @@ export class AdminService {
         (enrollment) => enrollment.status === EnrollmentStatus.COMPLETED,
       ).length,
       creditBalance: user.credits,
-      status: (user.isSuspended ? 'suspended' : 'active') as AdminUserStatus,
+      status: user.isSuspended ? 'suspended' : 'active',
       overview: {
         activeProgramsCount: user.enrollments.filter(
           (enrollment) => enrollment.status === EnrollmentStatus.ACTIVE,
@@ -459,21 +476,34 @@ export class AdminService {
    * detail (modules, lessons, students, session stats) is loaded per program
    * by `getProgram`.
    */
-  async getPrograms({ search, ...pageParams }: ListProgramsQueryDto) {
-    const where: Prisma.CourseWhereInput = search
-      ? {
-          OR: [
+  async getPrograms({
+    search,
+    status,
+    targetLevel,
+    sort,
+    order = 'asc',
+    ...pageParams
+  }: ListProgramsQueryDto) {
+    const where: Prisma.CourseWhereInput = {
+      status,
+      targetLevel,
+      OR: search
+        ? [
             { name: { contains: search, mode: 'insensitive' } },
             { creator: { name: { contains: search, mode: 'insensitive' } } },
-          ],
-        }
-      : {};
+          ]
+        : undefined,
+    };
+    // `sort` is one of PROGRAM_SORT_FIELDS (validated), all plain Course columns; id keeps pages stable on ties.
+    const orderBy: Prisma.CourseOrderByWithRelationInput[] = sort
+      ? [{ [sort]: order }, { id: 'asc' }]
+      : [{ name: 'asc' }, { id: 'asc' }];
 
     const [total, courses] = await Promise.all([
       this.prisma.course.count({ where }),
       this.prisma.course.findMany({
         where,
-        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        orderBy,
         ...toPrismaPage(pageParams),
         include: {
           category: true,
@@ -828,7 +858,7 @@ export class AdminService {
 
     return {
       id: updated.id,
-      status: (updated.isSuspended ? 'suspended' : 'active') as AdminUserStatus,
+      status: updated.isSuspended ? 'suspended' : 'active',
     };
   }
 

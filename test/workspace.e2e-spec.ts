@@ -93,7 +93,9 @@ describe('JOS Workspace contract (e2e)', () => {
       .expect(200);
     expect(res.body.modules.map((m: { key: string }) => m.key)).toEqual([
       'programs',
+      'categories',
       'students',
+      'creators',
       'campaigns',
       'assessment',
       'audit-log',
@@ -103,6 +105,7 @@ describe('JOS Workspace contract (e2e)', () => {
     ).toEqual([
       '/workspace/audiences/students',
       '/workspace/audiences/instructors',
+      '/workspace/audiences/signup-dropoffs',
     ]);
   });
 
@@ -121,13 +124,25 @@ describe('JOS Workspace contract (e2e)', () => {
       .expect(200);
   });
 
+  it('lists funnel drop-offs only for students:view, since the list carries emails', async () => {
+    const dropoffs = `/workspace/admin/students/signup-funnel/people?from=2020-03-01&to=2020-03-08&interval=day&step=1`;
+    await http()
+      .get(dropoffs)
+      .set(await asWorkspace(['analytics:view']))
+      .expect(403);
+    await http()
+      .get(dropoffs)
+      .set(await asWorkspace(['students:view']))
+      .expect(200);
+  });
+
   it('records the Keycloak user as creator of a workspace-made campaign', async () => {
     const res = await http()
       .post('/workspace/admin/campaigns')
       .set(await asWorkspace(['campaigns:manage']))
       .send({
         name: 'Workspace campaign',
-        code: 'WSKC10',
+        code: `WSKC${Date.now()}`,
         percentOff: 10,
         appliesTo: 'ALL',
         startsAt: new Date(Date.now() - 60_000).toISOString(),
@@ -185,6 +200,60 @@ describe('JOS Workspace contract (e2e)', () => {
     expect(reviewed.body.data.status).toBe(CourseStatus.REJECTED);
   });
 
+  it('filters, sorts and counts programs for the status tabs', async () => {
+    const course = await seedCourse(
+      app,
+      creator.id,
+      1,
+      CourseStatus.PENDING_REVIEW,
+    );
+    const { name } = await prisma.course.findUniqueOrThrow({
+      where: { id: course.id },
+    });
+    const search = `search=${encodeURIComponent(name)}`;
+    const matching = await http()
+      .get(
+        `/workspace/admin/programs?status=PENDING_REVIEW&targetLevel=Foundation&${search}`,
+      )
+      .set(auth(admin))
+      .expect(200);
+    expect(matching.body.data.map((row: { id: string }) => row.id)).toEqual([
+      course.id,
+    ]);
+    const otherStatus = await http()
+      .get(`/workspace/admin/programs?status=ACTIVE&${search}`)
+      .set(auth(admin))
+      .expect(200);
+    expect(otherStatus.body.meta.total).toBe(0);
+
+    const sorted = await http()
+      .get('/workspace/admin/programs?sort=tuitionFee&order=desc&limit=100')
+      .set(auth(admin))
+      .expect(200);
+    const fees = sorted.body.data.map(
+      (row: { tuitionFee: number }) => row.tuitionFee,
+    );
+    expect(fees).toEqual([...fees].sort((a, b) => b - a));
+    await http()
+      .get('/workspace/admin/programs?sort=rating')
+      .set(auth(admin))
+      .expect(400);
+    await http()
+      .get('/workspace/admin/programs?status=LIVE')
+      .set(auth(admin))
+      .expect(400);
+
+    const counts = await http()
+      .get('/workspace/admin/programs/counts')
+      .set(await asWorkspace(['programs:view']))
+      .expect(200);
+    expect(counts.body.data[CourseStatus.PENDING_REVIEW]).toBe(
+      await prisma.course.count({
+        where: { status: CourseStatus.PENDING_REVIEW },
+      }),
+    );
+  });
+
   it('creates an inactive campaign and pages campaigns with search', async () => {
     const code = `WS${Date.now()}`;
     const created = await http()
@@ -211,11 +280,92 @@ describe('JOS Workspace contract (e2e)', () => {
     expect(list.body.meta.total).toBe(1);
     expect(list.body.data[0].code).toBe(code);
 
+    for (const [isActive, total] of [
+      ['false', 1],
+      ['true', 0],
+    ] as const) {
+      const filtered = await http()
+        .get(`/workspace/admin/campaigns?isActive=${isActive}&search=${code}`)
+        .set(auth(admin))
+        .expect(200);
+      expect(filtered.body.meta.total).toBe(total);
+    }
+    const byStart = await http()
+      .get('/workspace/admin/campaigns?sort=startsAt&order=desc&limit=100')
+      .set(auth(admin))
+      .expect(200);
+    const starts = byStart.body.data.map((row: { startsAt: string }) =>
+      Date.parse(row.startsAt),
+    );
+    expect(starts).toEqual([...starts].sort((a, b) => b - a));
+
     const read = await http()
       .get(`/workspace/admin/campaigns/${created.body.data.id}`)
       .set(auth(admin))
       .expect(200);
     expect(read.body.data.redemptionCount).toBe(0);
+  });
+
+  it('round-trips quiz answers as plain text, keeping ids by position', async () => {
+    const manager = await asWorkspace(['assessment:manage']);
+    const created = await http()
+      .post('/workspace/admin/assessment')
+      .set(manager)
+      .send({
+        subject: 'maths',
+        prompt: 'What is 12 + 27?',
+        options: ['39', '40'],
+      })
+      .expect(201);
+    expect(created.body.data.options).toEqual(['39', '40']);
+    const stored = await prisma.assessmentQuestion.findUniqueOrThrow({
+      where: { id: created.body.data.id },
+    });
+    expect(stored.options).toEqual([
+      { id: 'a', label: '39' },
+      { id: 'b', label: '40' },
+    ]);
+
+    const updated = await http()
+      .patch(`/workspace/admin/assessment/${created.body.data.id}`)
+      .set(manager)
+      .send({ options: ['39', '40', '41'] })
+      .expect(200);
+    expect(updated.body.data.options).toEqual(['39', '40', '41']);
+
+    await http()
+      .post('/workspace/admin/assessment')
+      .set(manager)
+      .send({ subject: 'maths', prompt: 'One answer?', options: ['only'] })
+      .expect(400);
+  });
+
+  it('serves a student record and its related tabs with the view grant only', async () => {
+    const student = await seedUser(app, 'ws-tabs-student', UserRole.USER);
+    const viewer = await asWorkspace(['students:view']);
+    const read = await http()
+      .get(`/workspace/admin/students/${student.id}`)
+      .set(viewer)
+      .expect(200);
+    expect(read.body.data).toMatchObject({
+      id: student.id,
+      isSuspended: false,
+    });
+    for (const tab of ['programs', 'payments', 'rewards']) {
+      const res = await http()
+        .get(`/workspace/admin/students/${student.id}/${tab}`)
+        .set(viewer)
+        .expect(200);
+      expect(res.body.data).toEqual([]);
+    }
+    await http()
+      .get(`/workspace/admin/students/${creator.id}/payments`)
+      .set(viewer)
+      .expect(404);
+    await http()
+      .get(`/workspace/admin/creators/${creator.id}/programs`)
+      .set(viewer)
+      .expect(403);
   });
 
   it('suspends a student through a body-less action', async () => {
@@ -228,6 +378,42 @@ describe('JOS Workspace contract (e2e)', () => {
       where: { id: student.id },
     });
     expect(stored.isSuspended).toBe(true);
+
+    for (const [isSuspended, total] of [
+      ['true', 1],
+      ['false', 0],
+    ] as const) {
+      const filtered = await http()
+        .get(
+          `/workspace/admin/students?isSuspended=${isSuspended}&search=${encodeURIComponent(student.email)}`,
+        )
+        .set(auth(admin))
+        .expect(200);
+      expect(filtered.body.meta.total).toBe(total);
+    }
+    await http()
+      .get('/workspace/admin/students?isSuspended=maybe')
+      .set(auth(admin))
+      .expect(400);
+  });
+
+  it('filters creators by suspension in memory', async () => {
+    const active = await http()
+      .get(
+        `/workspace/admin/creators?isSuspended=false&search=${encodeURIComponent(creator.email)}`,
+      )
+      .set(auth(admin))
+      .expect(200);
+    expect(active.body.data.map((row: { id: string }) => row.id)).toEqual([
+      creator.id,
+    ]);
+    const suspended = await http()
+      .get(
+        `/workspace/admin/creators?isSuspended=true&search=${encodeURIComponent(creator.email)}`,
+      )
+      .set(auth(admin))
+      .expect(200);
+    expect(suspended.body.meta.total).toBe(0);
   });
 
   it('accepts the workspace search param on the audit log and answers errors as { message, code }', async () => {
@@ -288,6 +474,38 @@ describe('JOS Workspace contract (e2e)', () => {
       });
       await enrol('unpaid', programId, EnrollmentStatus.PENDING);
       instructor = await seedUser(app, `${tag}-teacher`, UserRole.INSTRUCTOR);
+    });
+
+    it('pulls signup drop-offs for a step and range, live and opted-in only', async () => {
+      const unverified = await seedUser(app, `${tag}-new`, UserRole.USER);
+      const unverifiedOptedOut = await seedUser(
+        app,
+        `${tag}-new-out`,
+        UserRole.USER,
+      );
+      await prisma.user.updateMany({
+        where: { id: { in: [unverified.id, unverifiedOptedOut.id] } },
+        data: { isEmailVerified: false },
+      });
+      await prisma.user.update({
+        where: { id: unverifiedOptedOut.id },
+        data: { marketingOptOut: true },
+      });
+      const dropoffs = (params: string) =>
+        http()
+          .get(`/workspace/audiences/signup-dropoffs?search=${tag}&${params}`)
+          .set(exporter);
+      const neverVerified = await dropoffs('step=1&range=7d').expect(200);
+      expect(neverVerified.body).toEqual({
+        data: [{ email: unverified.email, name: expect.any(String) }],
+        meta: { nextCursor: null, total: 1 },
+      });
+      const announcement = await dropoffs(
+        'step=1&range=7d&includeOptedOut=true',
+      ).expect(200);
+      expect(announcement.body.meta.total).toBe(2);
+      await dropoffs('range=7d').expect(400);
+      await dropoffs('step=1&range=week').expect(400);
     });
 
     it('needs a workspace token with audiences:export and nothing else', async () => {

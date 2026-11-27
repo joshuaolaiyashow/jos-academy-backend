@@ -9,13 +9,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { type ChartWindow, windowProblem } from './chart-window';
 import { ChartQueryDto } from './dto/chart-query.dto';
+import { FunnelPeopleQueryDto } from './dto/funnel-people-query.dto';
 import { WorkspaceAnalyticsService } from './workspace-analytics.service';
 import { WorkspaceAuthGuard } from './workspace-auth.guard';
 import { WORKSPACE_ADMIN_PATH } from './workspace.constants';
+import type { WorkspacePage } from './workspace-page';
 
 type Answer<T> = Promise<{ data: T }>;
 
-const checked = (query: ChartQueryDto): ChartWindow => {
+const checked = <T extends ChartQueryDto>(query: T): T & ChartWindow => {
   const problem = windowProblem(query);
   if (problem) throw new BadRequestException(problem);
   return query;
@@ -110,5 +112,24 @@ export class WorkspaceAnalyticsController {
   @Get('signup-funnel')
   async signupFunnel(@Query() query: ChartQueryDto): Answer<unknown> {
     return { data: await this.analytics.signupFunnel(checked(query)) };
+  }
+}
+
+/**
+ * Who left at each step of the signup funnel. These lists carry emails, so they sit under workspace/admin/students
+ * and the guard asks for `students:view`, not just `analytics:view`; the workspace audits every view.
+ */
+@ApiTags('JOS Workspace')
+@ApiBearerAuth('JWT-auth')
+@Controller(`${WORKSPACE_ADMIN_PATH}/students/signup-funnel`)
+@UseGuards(WorkspaceAuthGuard)
+export class WorkspaceFunnelPeopleController {
+  constructor(private readonly analytics: WorkspaceAnalyticsService) {}
+
+  @Get('people')
+  signupDropoffs(
+    @Query() query: FunnelPeopleQueryDto,
+  ): Promise<WorkspacePage<unknown>> {
+    return this.analytics.signupDropoffs(checked(query));
   }
 }

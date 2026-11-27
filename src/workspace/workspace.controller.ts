@@ -20,15 +20,20 @@ import type { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { UpdateDiscountCampaignDto } from '../discount/dto/create-discount-campaign.dto';
 import { DiscountService } from '../discount/discount.service';
 import { UserRole } from '../generated/prisma/client';
-import { UpdateAssessmentQuestionDto } from '../onboarding/dto/assessment-question.dto';
 import { OnboardingService } from '../onboarding/onboarding.service';
 import { PaginatedSearchQueryDto } from '../utils/pagination';
 import {
+  WorkspaceAccountsQueryDto,
   WorkspaceAuditLogQueryDto,
+  WorkspaceCampaignsQueryDto,
+  WorkspaceCreateAssessmentQuestionDto,
   WorkspaceCreateCampaignDto,
   WorkspaceProgramReviewDto,
+  WorkspaceUpdateAssessmentQuestionDto,
 } from './dto/workspace.dto';
+import { toAssessmentOptions, toOptionLabels } from './assessment-options';
 import { WorkspaceAuthGuard } from './workspace-auth.guard';
+import { WorkspaceRecordsService } from './workspace-records.service';
 import { WORKSPACE_ADMIN_PATH } from './workspace.constants';
 import {
   findRecord,
@@ -37,6 +42,28 @@ import {
   type WorkspacePage,
   type WorkspaceRecord,
 } from './workspace-page';
+
+type AdminStudent = Awaited<ReturnType<AdminService['getStudent']>>;
+
+// Only the manifest's fields: the admin student object nests them and carries payments and progress too (those are tabs).
+const toWorkspaceStudent = (student: AdminStudent) => ({
+  id: student.id,
+  name: student.name,
+  email: student.email,
+  phone: student.personalInfo.phone,
+  country: student.personalInfo.country,
+  bio: student.personalInfo.bio,
+  credits: student.creditBalance,
+  enrolledProgramsCount: student.enrolledProgramsCount,
+  completedProgramsCount: student.completedProgramsCount,
+  isSuspended: student.status === 'suspended',
+  createdAt: student.personalInfo.dateJoined,
+});
+
+const toWorkspaceQuestion = <T extends { options: unknown }>(question: T) => ({
+  ...question,
+  options: toOptionLabels(question.options),
+});
 
 /**
  * The admin routes in the JOS Workspace contract shape ({ data, meta }), so the
@@ -52,6 +79,7 @@ export class WorkspaceController {
     private readonly discounts: DiscountService,
     private readonly onboarding: OnboardingService,
     private readonly audit: AuditService,
+    private readonly records: WorkspaceRecordsService,
   ) {}
 
   @Get('programs')
@@ -61,6 +89,13 @@ export class WorkspaceController {
   ): Promise<WorkspacePage<unknown>> {
     const { courses, ...meta } = await this.admin.getPrograms(query);
     return toWorkspacePage(courses, meta);
+  }
+
+  // Declared before programs/:id so "counts" isn't read as a program id.
+  @Get('programs/counts')
+  @ApiOperation({ summary: 'Programs per status, for the status tabs' })
+  async programCounts(): Promise<WorkspaceRecord<Record<string, number>>> {
+    return { data: await this.records.programStatusCounts() };
   }
 
   @Get('programs/:id')
@@ -91,29 +126,26 @@ export class WorkspaceController {
   }
 
   @Get('students')
-  @ApiOperation({ summary: 'Students (workspace); search matches name or email' })
+  @ApiOperation({
+    summary: 'Students (workspace); search matches name or email',
+  })
   async listStudents(
-    @Query() query: PaginatedSearchQueryDto,
+    @Query() query: WorkspaceAccountsQueryDto,
   ): Promise<WorkspacePage<unknown>> {
     const { students, ...meta } = await this.admin.getStudents(
       query.page,
       query.limit,
       query.search,
+      query.isSuspended,
     );
-    // Only the manifest's fields: the admin student object nests them and carries payments and progress too.
-    return toWorkspacePage(
-      students.map((student) => ({
-        id: student.id,
-        name: student.name,
-        email: student.email,
-        phone: student.personalInfo.phone,
-        country: student.personalInfo.country,
-        credits: student.creditBalance,
-        isSuspended: student.status === 'suspended',
-        createdAt: student.personalInfo.dateJoined,
-      })),
-      meta,
-    );
+    return toWorkspacePage(students.map(toWorkspaceStudent), meta);
+  }
+
+  @Get('students/:id')
+  async readStudent(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<WorkspaceRecord<unknown>> {
+    return { data: toWorkspaceStudent(await this.admin.getStudent(id)) };
   }
 
   @Patch('students/:id/suspend')
@@ -136,10 +168,12 @@ export class WorkspaceController {
 
   @Get('campaigns')
   async listCampaigns(
-    @Query() query: PaginatedSearchQueryDto,
+    @Query() query: WorkspaceCampaignsQueryDto,
   ): Promise<WorkspacePage<unknown>> {
     const { campaigns } = await this.discounts.listCampaigns();
-    return pageInMemory(campaigns, query, ['name', 'code']);
+    return pageInMemory(campaigns, query, ['name', 'code'], {
+      isActive: query.isActive,
+    });
   }
 
   @Get('campaigns/:id')
@@ -176,7 +210,9 @@ export class WorkspaceController {
   async listQuestions(
     @Query() query: PaginatedSearchQueryDto,
   ): Promise<WorkspacePage<unknown>> {
-    const questions = await this.onboarding.listAllQuestions();
+    const questions = (await this.onboarding.listAllQuestions()).map(
+      toWorkspaceQuestion,
+    );
     return pageInMemory(questions, query, ['subject', 'prompt']);
   }
 
@@ -184,16 +220,33 @@ export class WorkspaceController {
   async readQuestion(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<WorkspaceRecord<unknown>> {
-    const questions = await this.onboarding.listAllQuestions();
+    const questions = (await this.onboarding.listAllQuestions()).map(
+      toWorkspaceQuestion,
+    );
     return { data: findRecord(questions, id, 'Question') };
+  }
+
+  @Post('assessment')
+  async createQuestion(
+    @Body() { options, ...dto }: WorkspaceCreateAssessmentQuestionDto,
+  ): Promise<WorkspaceRecord<unknown>> {
+    const created = await this.onboarding.createQuestion({
+      ...dto,
+      options: toAssessmentOptions(options),
+    });
+    return { data: toWorkspaceQuestion(created) };
   }
 
   @Patch('assessment/:id')
   async updateQuestion(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateAssessmentQuestionDto,
+    @Body() { options, ...dto }: WorkspaceUpdateAssessmentQuestionDto,
   ): Promise<WorkspaceRecord<unknown>> {
-    return { data: await this.onboarding.updateQuestion(id, dto) };
+    const updated = await this.onboarding.updateQuestion(id, {
+      ...dto,
+      options: options ? toAssessmentOptions(options) : undefined,
+    });
+    return { data: toWorkspaceQuestion(updated) };
   }
 
   @Delete('assessment/:id')
@@ -204,7 +257,9 @@ export class WorkspaceController {
   }
 
   @Get('audit-log')
-  @ApiOperation({ summary: 'Audit log (workspace); search matches action or target' })
+  @ApiOperation({
+    summary: 'Audit log (workspace); search matches action or target',
+  })
   async listAuditLog(
     @Query() query: WorkspaceAuditLogQueryDto,
   ): Promise<WorkspacePage<unknown>> {

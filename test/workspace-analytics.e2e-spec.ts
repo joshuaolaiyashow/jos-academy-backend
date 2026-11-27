@@ -36,6 +36,7 @@ describe('JOS Workspace Overview charts (e2e)', () => {
   let student: SeededUser;
   let before: Record<string, unknown>;
   let c1Name: string;
+  let verifiedOnly: SeededUser;
 
   const http = () => request(app.getHttpServer());
   const chart = async <T = unknown>(
@@ -79,6 +80,7 @@ describe('JOS Workspace Overview charts (e2e)', () => {
       where: { id: s2.id },
       data: { createdAt: day('2020-03-03') },
     });
+    verifiedOnly = s2;
     await prisma.user.update({
       where: { id: s3.id },
       data: { createdAt: day('2020-02-25') },
@@ -282,6 +284,48 @@ describe('JOS Workspace Overview charts (e2e)', () => {
       { label: 'Completed a program', value: 0 },
       { label: 'Got a certificate', value: 0 },
     ]);
+  });
+
+  describe('drop-off people', () => {
+    const PEOPLE = '/workspace/admin/students/signup-funnel/people';
+    const people = (query: object) =>
+      http()
+        .get(PEOPLE)
+        .query({ ...WEEK, ...query })
+        .set(auth(admin));
+    const totalOf = async (query: object): Promise<number> =>
+      ((await people(query).expect(200)).body as { meta: { total: number } })
+        .meta.total;
+
+    it('lists who reached the step before but not this one, from the same cohort', async () => {
+      // s2 verified but never onboarded, so it's the only one who left before "Finished onboarding".
+      const res = await people({ step: 2 }).expect(200);
+      expect(res.body).toEqual({
+        data: [
+          {
+            id: verifiedOnly.id,
+            email: verifiedOnly.email,
+            name: expect.any(String) as string,
+            signedUpAt: day('2020-03-03').toISOString(),
+          },
+        ],
+        meta: { total: 1, page: 1, limit: 20 },
+      });
+      expect(await totalOf({ step: 1 })).toBe(0);
+      // s1 passed every step up to "Completed a lesson", then stopped.
+      expect(await totalOf({ step: 6 })).toBe(1);
+    });
+
+    it('pages, and refuses steps outside the funnel', async () => {
+      const page2 = await people({ step: 2, page: 2, limit: 1 }).expect(200);
+      expect(page2.body).toEqual({
+        data: [],
+        meta: { total: 1, page: 2, limit: 1 },
+      });
+      await people({ step: 0 }).expect(400);
+      await people({ step: 8 }).expect(400);
+      await people({}).expect(400);
+    });
   });
 
   it('rejects a bad window with a 400', async () => {

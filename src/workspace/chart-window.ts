@@ -77,3 +77,39 @@ export const toSeries = (
 
 export const percent = (part: number, whole: number): number =>
   whole === 0 ? 0 : Math.round((part / whole) * 100);
+
+// The Overview's range switch (ANALYTICS_RANGES in jos-workspace lib/analytics.ts), for broadcast audiences, which
+// take a range key instead of dates so a scheduled send still means "the last 30 days" when it goes out.
+export const CHART_RANGES = {
+  '7d': { label: '7 days', span: 7, interval: 'day' },
+  '30d': { label: '30 days', span: 30, interval: 'day' },
+  '12m': { label: '12 months', span: 12, interval: 'month' },
+} as const satisfies Record<
+  string,
+  { label: string; span: number; interval: ChartInterval }
+>;
+export type ChartRange = keyof typeof CHART_RANGES;
+export const CHART_RANGE_KEYS = Object.keys(CHART_RANGES) as ChartRange[];
+
+/** UTC days ending today, or UTC months ending this month, the same window the Overview asks for. */
+export const rangeWindow = (
+  range: ChartRange,
+  now: Date = new Date(),
+): ChartWindow => {
+  const { span, interval } = CHART_RANGES[range];
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  if (interval === 'month') {
+    return {
+      from: new Date(Date.UTC(year, month - span + 1, 1)),
+      to: new Date(Date.UTC(year, month + 1, 1)),
+      interval,
+    };
+  }
+  const to = new Date(Date.UTC(year, month, now.getUTCDate() + 1));
+  return {
+    from: new Date(Date.UTC(year, month, now.getUTCDate() + 1 - span)),
+    to,
+    interval,
+  };
+};
