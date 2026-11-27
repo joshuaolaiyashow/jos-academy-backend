@@ -8,7 +8,14 @@
       "path": "/workspace/admin/programs",
       "operations": ["list", "read", "update"],
       "fields": [
-        { "name": "name", "label": "Program", "type": "text", "list": true, "readOnly": true },
+        {
+          "name": "name",
+          "label": "Program",
+          "type": "text",
+          "list": true,
+          "readOnly": true,
+          "sortable": true
+        },
         {
           "name": "status",
           "label": "Status",
@@ -16,21 +23,106 @@
           "required": true,
           "list": true,
           "options": [
-            { "value": "DRAFT", "label": "Draft" },
-            { "value": "PENDING_REVIEW", "label": "Pending review" },
-            { "value": "IN_REVIEW", "label": "In review" },
-            { "value": "ACTIVE", "label": "Approved" },
-            { "value": "REJECTED", "label": "Rejected" }
+            {
+              "value": "DRAFT",
+              "label": "Draft",
+              "tone": "neutral"
+            },
+            {
+              "value": "PENDING_REVIEW",
+              "label": "Pending review",
+              "tone": "warning"
+            },
+            {
+              "value": "IN_REVIEW",
+              "label": "In review",
+              "tone": "info"
+            },
+            {
+              "value": "ACTIVE",
+              "label": "Approved",
+              "tone": "success"
+            },
+            {
+              "value": "REJECTED",
+              "label": "Rejected",
+              "tone": "danger"
+            }
           ]
         },
-        { "name": "rejectionReason", "label": "Rejection reason", "type": "textarea" },
-        { "name": "shortDescription", "label": "Summary", "type": "textarea", "readOnly": true },
-        { "name": "tuitionFee", "label": "Tuition", "type": "money", "list": true, "readOnly": true },
-        { "name": "lessonsCount", "label": "Lessons", "type": "number", "list": true, "readOnly": true },
-        { "name": "rating", "label": "Rating", "type": "number", "readOnly": true },
-        { "name": "totalRevenue", "label": "Revenue", "type": "money", "readOnly": true },
-        { "name": "startsAt", "label": "Starts", "type": "datetime", "list": true, "readOnly": true },
-        { "name": "endsAt", "label": "Ends", "type": "datetime", "readOnly": true }
+        {
+          "name": "rejectionReason",
+          "label": "Rejection reason",
+          "type": "textarea"
+        },
+        {
+          "name": "shortDescription",
+          "label": "Summary",
+          "type": "textarea",
+          "readOnly": true
+        },
+        {
+          "name": "targetLevel",
+          "label": "Level",
+          "type": "select",
+          "readOnly": true,
+          "filter": true,
+          "options": [
+            {
+              "value": "Foundation",
+              "label": "Foundation"
+            },
+            {
+              "value": "Intermediate",
+              "label": "Intermediate"
+            },
+            {
+              "value": "Advanced",
+              "label": "Advanced"
+            }
+          ]
+        },
+        {
+          "name": "tuitionFee",
+          "label": "Tuition",
+          "type": "money",
+          "list": true,
+          "readOnly": true,
+          "sortable": true
+        },
+        {
+          "name": "lessonsCount",
+          "label": "Lessons",
+          "type": "number",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "rating",
+          "label": "Rating",
+          "type": "number",
+          "readOnly": true
+        },
+        {
+          "name": "totalRevenue",
+          "label": "Revenue",
+          "type": "money",
+          "readOnly": true
+        },
+        {
+          "name": "startsAt",
+          "label": "Starts",
+          "type": "datetime",
+          "list": true,
+          "readOnly": true,
+          "sortable": true
+        },
+        {
+          "name": "endsAt",
+          "label": "Ends",
+          "type": "datetime",
+          "readOnly": true
+        }
       ],
       "actions": [
         {
@@ -38,7 +130,104 @@
           "label": "Start review",
           "method": "PATCH",
           "path": "/workspace/admin/programs/:id/start-review",
-          "confirm": "Start reviewing this program? The creator can't edit it until you approve or reject it."
+          "confirm": "Start reviewing this program? The creator can't edit it until you approve or reject it.",
+          "inline": true,
+          "showWhen": {
+            "field": "status",
+            "values": ["PENDING_REVIEW"]
+          }
+        }
+      ],
+      "tabs": [
+        {
+          "key": "lessons",
+          "label": "Lessons",
+          "path": "/workspace/admin/programs/:id/lessons",
+          "fields": [
+            {
+              "name": "module",
+              "label": "Module",
+              "type": "text"
+            },
+            {
+              "name": "title",
+              "label": "Lesson",
+              "type": "text"
+            },
+            {
+              "name": "duration",
+              "label": "Minutes",
+              "type": "number"
+            },
+            {
+              "name": "videoUrl",
+              "label": "Video",
+              "type": "url"
+            }
+          ]
+        },
+        {
+          "key": "students",
+          "label": "Students",
+          "path": "/workspace/admin/programs/:id/students",
+          "fields": [
+            {
+              "name": "name",
+              "label": "Name",
+              "type": "text"
+            },
+            {
+              "name": "email",
+              "label": "Email",
+              "type": "email"
+            },
+            {
+              "name": "status",
+              "label": "Status",
+              "type": "text"
+            },
+            {
+              "name": "createdAt",
+              "label": "Enrolled",
+              "type": "datetime"
+            }
+          ]
+        }
+      ],
+      "statusTabs": "status"
+    },
+    {
+      "key": "categories",
+      "label": "Categories",
+      "icon": "tag",
+      "path": "/workspace/admin/categories",
+      "operations": ["list", "read", "create", "update", "delete"],
+      "fields": [
+        {
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "textarea",
+          "list": true
+        },
+        {
+          "name": "coursesCount",
+          "label": "Programs",
+          "type": "number",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "updatedAt",
+          "label": "Updated",
+          "type": "datetime",
+          "readOnly": true
         }
       ]
     },
@@ -48,15 +237,74 @@
       "icon": "users",
       "path": "/workspace/admin/students",
       "sensitive": true,
-      "operations": ["list"],
+      "operations": ["list", "read"],
       "fields": [
-        { "name": "name", "label": "Name", "type": "text", "list": true, "readOnly": true },
-        { "name": "email", "label": "Email", "type": "email", "list": true, "readOnly": true },
-        { "name": "phone", "label": "Phone", "type": "text", "readOnly": true },
-        { "name": "country", "label": "Country", "type": "text", "list": true, "readOnly": true },
-        { "name": "credits", "label": "Credits", "type": "number", "readOnly": true },
-        { "name": "isSuspended", "label": "Suspended", "type": "boolean", "list": true, "readOnly": true },
-        { "name": "createdAt", "label": "Joined", "type": "datetime", "list": true, "readOnly": true }
+        {
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "email",
+          "label": "Email",
+          "type": "email",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "phone",
+          "label": "Phone",
+          "type": "text",
+          "readOnly": true
+        },
+        {
+          "name": "country",
+          "label": "Country",
+          "type": "text",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "credits",
+          "label": "Credits",
+          "type": "number",
+          "readOnly": true
+        },
+        {
+          "name": "isSuspended",
+          "label": "Suspended",
+          "type": "boolean",
+          "list": true,
+          "readOnly": true,
+          "filter": true
+        },
+        {
+          "name": "bio",
+          "label": "Bio",
+          "type": "textarea",
+          "readOnly": true
+        },
+        {
+          "name": "enrolledProgramsCount",
+          "label": "Programs",
+          "type": "number",
+          "readOnly": true
+        },
+        {
+          "name": "completedProgramsCount",
+          "label": "Completed",
+          "type": "number",
+          "readOnly": true
+        },
+        {
+          "name": "createdAt",
+          "label": "Joined",
+          "type": "datetime",
+          "list": true,
+          "readOnly": true
+        }
       ],
       "actions": [
         {
@@ -64,13 +312,332 @@
           "label": "Suspend",
           "method": "PATCH",
           "path": "/workspace/admin/students/:id/suspend",
-          "confirm": "Suspend this student? They won't be able to sign in."
+          "confirm": "Suspend this student? They won't be able to sign in.",
+          "inline": true,
+          "showWhen": {
+            "field": "isSuspended",
+            "values": ["false"]
+          }
         },
         {
           "key": "reactivate",
           "label": "Reactivate",
           "method": "PATCH",
-          "path": "/workspace/admin/students/:id/reactivate"
+          "path": "/workspace/admin/students/:id/reactivate",
+          "inline": true,
+          "showWhen": {
+            "field": "isSuspended",
+            "values": ["true"]
+          }
+        }
+      ],
+      "tabs": [
+        {
+          "key": "programs",
+          "label": "Programs",
+          "path": "/workspace/admin/students/:id/programs",
+          "fields": [
+            {
+              "name": "program",
+              "label": "Program",
+              "type": "text"
+            },
+            {
+              "name": "status",
+              "label": "Status",
+              "type": "text"
+            },
+            {
+              "name": "progressPercent",
+              "label": "Progress (%)",
+              "type": "number"
+            },
+            {
+              "name": "enrolledAt",
+              "label": "Enrolled",
+              "type": "datetime"
+            }
+          ]
+        },
+        {
+          "key": "payments",
+          "label": "Payments",
+          "path": "/workspace/admin/students/:id/payments",
+          "fields": [
+            {
+              "name": "date",
+              "label": "Date",
+              "type": "datetime"
+            },
+            {
+              "name": "type",
+              "label": "Type",
+              "type": "text"
+            },
+            {
+              "name": "program",
+              "label": "Program",
+              "type": "text"
+            },
+            {
+              "name": "amount",
+              "label": "Amount (USD)",
+              "type": "money"
+            },
+            {
+              "name": "credits",
+              "label": "Credits",
+              "type": "number"
+            },
+            {
+              "name": "status",
+              "label": "Status",
+              "type": "text"
+            },
+            {
+              "name": "reference",
+              "label": "Reference",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "key": "rewards",
+          "label": "Rewards",
+          "path": "/workspace/admin/students/:id/rewards",
+          "fields": [
+            {
+              "name": "createdAt",
+              "label": "Date",
+              "type": "datetime"
+            },
+            {
+              "name": "campaign",
+              "label": "Campaign",
+              "type": "text"
+            },
+            {
+              "name": "percentOff",
+              "label": "% off",
+              "type": "number"
+            },
+            {
+              "name": "discountAmount",
+              "label": "Saved (USD)",
+              "type": "money"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "creators",
+      "label": "Creators",
+      "icon": "chalkboard-teacher",
+      "path": "/workspace/admin/creators",
+      "sensitive": true,
+      "operations": ["list", "read", "create"],
+      "fields": [
+        {
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "email",
+          "label": "Email",
+          "type": "email",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "phone",
+          "label": "Phone",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "country",
+          "label": "Country",
+          "type": "text",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "fieldOfExpertise",
+          "label": "Expertise",
+          "type": "text",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "teachingExperience",
+          "label": "Teaching experience",
+          "type": "textarea",
+          "required": true
+        },
+        {
+          "name": "availability",
+          "label": "Availability",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "FULL_TIME",
+              "label": "Full time"
+            },
+            {
+              "value": "PART_TIME",
+              "label": "Part time"
+            }
+          ]
+        },
+        {
+          "name": "wasApplicant",
+          "label": "Hired from a job application",
+          "type": "boolean"
+        },
+        {
+          "name": "rating",
+          "label": "Rating",
+          "type": "number",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "reviewsCount",
+          "label": "Reviews",
+          "type": "number",
+          "readOnly": true
+        },
+        {
+          "name": "isSuspended",
+          "label": "Suspended",
+          "type": "boolean",
+          "list": true,
+          "readOnly": true,
+          "filter": true
+        },
+        {
+          "name": "createdAt",
+          "label": "Joined",
+          "type": "datetime",
+          "readOnly": true
+        }
+      ],
+      "actions": [
+        {
+          "key": "suspend",
+          "label": "Suspend",
+          "method": "PATCH",
+          "path": "/workspace/admin/creators/:id/suspend",
+          "confirm": "Suspend this creator? They won't be able to sign in or edit their programs.",
+          "inline": true,
+          "showWhen": {
+            "field": "isSuspended",
+            "values": ["false"]
+          }
+        },
+        {
+          "key": "reactivate",
+          "label": "Reactivate",
+          "method": "PATCH",
+          "path": "/workspace/admin/creators/:id/reactivate",
+          "inline": true,
+          "showWhen": {
+            "field": "isSuspended",
+            "values": ["true"]
+          }
+        }
+      ],
+      "tabs": [
+        {
+          "key": "programs",
+          "label": "Programs",
+          "path": "/workspace/admin/creators/:id/programs",
+          "fields": [
+            {
+              "name": "name",
+              "label": "Program",
+              "type": "text"
+            },
+            {
+              "name": "status",
+              "label": "Status",
+              "type": "select",
+              "options": [
+                {
+                  "value": "DRAFT",
+                  "label": "Draft"
+                },
+                {
+                  "value": "PENDING_REVIEW",
+                  "label": "Pending review"
+                },
+                {
+                  "value": "IN_REVIEW",
+                  "label": "In review"
+                },
+                {
+                  "value": "ACTIVE",
+                  "label": "Approved"
+                },
+                {
+                  "value": "REJECTED",
+                  "label": "Rejected"
+                }
+              ]
+            },
+            {
+              "name": "students",
+              "label": "Students",
+              "type": "number"
+            },
+            {
+              "name": "revenue",
+              "label": "Revenue (USD)",
+              "type": "money"
+            },
+            {
+              "name": "startsAt",
+              "label": "Starts",
+              "type": "datetime"
+            }
+          ]
+        },
+        {
+          "key": "reviews",
+          "label": "Reviews",
+          "path": "/workspace/admin/creators/:id/reviews",
+          "fields": [
+            {
+              "name": "createdAt",
+              "label": "Date",
+              "type": "datetime"
+            },
+            {
+              "name": "program",
+              "label": "Program",
+              "type": "text"
+            },
+            {
+              "name": "student",
+              "label": "Student",
+              "type": "text"
+            },
+            {
+              "name": "rating",
+              "label": "Rating",
+              "type": "number"
+            },
+            {
+              "name": "comment",
+              "label": "Comment",
+              "type": "textarea"
+            }
+          ]
         }
       ]
     },
@@ -82,29 +649,162 @@
       "sensitive": true,
       "operations": ["list", "read", "create", "update"],
       "fields": [
-        { "name": "name", "label": "Name", "type": "text", "required": true, "list": true },
-        { "name": "code", "label": "Code", "type": "text", "required": true, "list": true },
-        { "name": "description", "label": "Description", "type": "textarea" },
-        { "name": "percentOff", "label": "% off", "type": "number", "required": true, "list": true },
+        {
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "required": true,
+          "list": true,
+          "sortable": true
+        },
+        {
+          "name": "code",
+          "label": "Code",
+          "type": "text",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "textarea"
+        },
+        {
+          "name": "percentOff",
+          "label": "% off",
+          "type": "number",
+          "required": true,
+          "list": true,
+          "sortable": true
+        },
         {
           "name": "appliesTo",
           "label": "Applies to",
           "type": "select",
           "required": true,
           "options": [
-            { "value": "ALL", "label": "Everything" },
-            { "value": "COURSE_PURCHASE", "label": "Program purchases" },
-            { "value": "CREDIT_TOP_UP", "label": "Credit top-ups" }
+            {
+              "value": "ALL",
+              "label": "Everything"
+            },
+            {
+              "value": "COURSE_PURCHASE",
+              "label": "Program purchases"
+            },
+            {
+              "value": "CREDIT_TOP_UP",
+              "label": "Credit top-ups"
+            }
           ]
         },
-        { "name": "startsAt", "label": "Starts", "type": "datetime", "required": true, "list": true },
-        { "name": "endsAt", "label": "Ends", "type": "datetime", "required": true, "list": true },
-        { "name": "maxRedemptions", "label": "Max redemptions", "type": "number" },
-        { "name": "perUserLimit", "label": "Per-person limit", "type": "number" },
-        { "name": "isActive", "label": "Active", "type": "boolean", "list": true },
-        { "name": "isInviteOnly", "label": "Invite only", "type": "boolean", "readOnly": true },
-        { "name": "redemptionCount", "label": "Redemptions", "type": "number", "list": true, "readOnly": true },
-        { "name": "totalDiscountGiven", "label": "Discount given", "type": "money", "readOnly": true }
+        {
+          "name": "startsAt",
+          "label": "Starts",
+          "type": "datetime",
+          "required": true,
+          "list": true,
+          "sortable": true
+        },
+        {
+          "name": "endsAt",
+          "label": "Ends",
+          "type": "datetime",
+          "required": true,
+          "list": true,
+          "sortable": true
+        },
+        {
+          "name": "maxRedemptions",
+          "label": "Max redemptions",
+          "type": "number"
+        },
+        {
+          "name": "perUserLimit",
+          "label": "Per-person limit",
+          "type": "number"
+        },
+        {
+          "name": "isActive",
+          "label": "Active",
+          "type": "boolean",
+          "list": true,
+          "filter": true
+        },
+        {
+          "name": "isInviteOnly",
+          "label": "Invite only",
+          "type": "boolean",
+          "readOnly": true
+        },
+        {
+          "name": "redemptionCount",
+          "label": "Redemptions",
+          "type": "number",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "totalDiscountGiven",
+          "label": "Discount given",
+          "type": "money",
+          "readOnly": true
+        }
+      ],
+      "tabs": [
+        {
+          "key": "redemptions",
+          "label": "Redemptions",
+          "path": "/workspace/admin/campaigns/:id/redemptions",
+          "fields": [
+            {
+              "name": "createdAt",
+              "label": "Date",
+              "type": "datetime"
+            },
+            {
+              "name": "name",
+              "label": "Name",
+              "type": "text"
+            },
+            {
+              "name": "email",
+              "label": "Email",
+              "type": "email"
+            },
+            {
+              "name": "target",
+              "label": "On",
+              "type": "text"
+            },
+            {
+              "name": "discountAmount",
+              "label": "Saved (USD)",
+              "type": "money"
+            },
+            {
+              "name": "finalAmount",
+              "label": "Paid (USD)",
+              "type": "money"
+            }
+          ]
+        },
+        {
+          "key": "invitees",
+          "label": "Invitees",
+          "path": "/workspace/admin/campaigns/:id/invitees",
+          "fields": [
+            {
+              "name": "name",
+              "label": "Name",
+              "type": "text"
+            },
+            {
+              "name": "email",
+              "label": "Email",
+              "type": "email"
+            }
+          ]
+        }
       ]
     },
     {
@@ -112,13 +812,46 @@
       "label": "Assessment",
       "icon": "clipboard-check",
       "path": "/workspace/admin/assessment",
-      "operations": ["list", "read", "update", "delete"],
+      "operations": ["list", "read", "create", "update", "delete"],
       "fields": [
-        { "name": "subject", "label": "Subject", "type": "text", "required": true, "list": true },
-        { "name": "prompt", "label": "Question", "type": "textarea", "required": true, "list": true },
-        { "name": "order", "label": "Order", "type": "number", "list": true },
-        { "name": "isActive", "label": "Active", "type": "boolean", "list": true },
-        { "name": "updatedAt", "label": "Updated", "type": "datetime", "readOnly": true }
+        {
+          "name": "subject",
+          "label": "Subject",
+          "type": "text",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "prompt",
+          "label": "Question",
+          "type": "textarea",
+          "required": true,
+          "list": true
+        },
+        {
+          "name": "options",
+          "label": "Answers",
+          "type": "list",
+          "required": true
+        },
+        {
+          "name": "order",
+          "label": "Order",
+          "type": "number",
+          "list": true
+        },
+        {
+          "name": "isActive",
+          "label": "Active",
+          "type": "boolean",
+          "list": true
+        },
+        {
+          "name": "updatedAt",
+          "label": "Updated",
+          "type": "datetime",
+          "readOnly": true
+        }
       ]
     },
     {
@@ -128,33 +861,163 @@
       "path": "/workspace/admin/audit-log",
       "operations": ["list"],
       "fields": [
-        { "name": "createdAt", "label": "When", "type": "datetime", "list": true, "readOnly": true },
-        { "name": "actorName", "label": "Who", "type": "text", "list": true, "readOnly": true },
-        { "name": "actorRole", "label": "Role", "type": "text", "readOnly": true },
-        { "name": "action", "label": "Action", "type": "text", "list": true, "readOnly": true },
-        { "name": "targetType", "label": "Target", "type": "text", "list": true, "readOnly": true },
-        { "name": "targetId", "label": "Target id", "type": "text", "readOnly": true },
-        { "name": "ip", "label": "IP", "type": "text", "readOnly": true },
-        { "name": "userAgent", "label": "User agent", "type": "text", "readOnly": true }
+        {
+          "name": "createdAt",
+          "label": "When",
+          "type": "datetime",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "actorName",
+          "label": "Who",
+          "type": "text",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "actorRole",
+          "label": "Role",
+          "type": "text",
+          "readOnly": true
+        },
+        {
+          "name": "action",
+          "label": "Action",
+          "type": "text",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "targetType",
+          "label": "Target",
+          "type": "text",
+          "list": true,
+          "readOnly": true
+        },
+        {
+          "name": "targetId",
+          "label": "Target id",
+          "type": "text",
+          "readOnly": true
+        },
+        {
+          "name": "ip",
+          "label": "IP",
+          "type": "text",
+          "readOnly": true
+        },
+        {
+          "name": "userAgent",
+          "label": "User agent",
+          "type": "text",
+          "readOnly": true
+        }
       ]
     }
   ],
   "analytics": [
-    {"key": "total-students", "label": "Total students", "type": "stat", "path": "/workspace/admin/analytics/total-students"},
-    {"key": "new-students", "label": "New students", "type": "stat", "path": "/workspace/admin/analytics/new-students"},
-    {"key": "onboarding-completion", "label": "Finished onboarding (%)", "type": "stat", "path": "/workspace/admin/analytics/onboarding-completion"},
-    {"key": "revenue", "label": "Revenue (USD)", "type": "stat", "path": "/workspace/admin/analytics/revenue", "format": "money", "sensitive": true},
-    {"key": "enrolments", "label": "Paid enrolments", "type": "stat", "path": "/workspace/admin/analytics/enrolments"},
-    {"key": "lessons-completed", "label": "Lessons completed", "type": "stat", "path": "/workspace/admin/analytics/lessons-completed"},
-    {"key": "certificates", "label": "Certificates issued", "type": "stat", "path": "/workspace/admin/analytics/certificates"},
-    {"key": "failed-payments", "label": "Failed payments", "type": "stat", "path": "/workspace/admin/analytics/failed-payments"},
-    {"key": "average-rating", "label": "Average rating", "type": "stat", "path": "/workspace/admin/analytics/average-rating"},
-    {"key": "signups", "label": "Signups", "type": "timeseries", "path": "/workspace/admin/analytics/signups"},
-    {"key": "revenue-over-time", "label": "Revenue (USD)", "type": "timeseries", "path": "/workspace/admin/analytics/revenue-over-time", "format": "money", "sensitive": true},
-    {"key": "enrolments-over-time", "label": "Paid enrolments", "type": "timeseries", "path": "/workspace/admin/analytics/enrolments-over-time"},
-    {"key": "top-programs", "label": "Most enrolled programs", "type": "breakdown", "path": "/workspace/admin/analytics/top-programs"},
-    {"key": "revenue-by-program", "label": "Revenue by program (USD)", "type": "breakdown", "path": "/workspace/admin/analytics/revenue-by-program", "format": "money", "sensitive": true},
-    {"key": "signup-funnel", "label": "From signup to certificate", "type": "funnel", "path": "/workspace/admin/analytics/signup-funnel"},
-    {"key": "enrolments-by-status", "label": "Enrolments by status", "type": "breakdown", "path": "/workspace/admin/analytics/enrolments-by-status"}
+    {
+      "key": "total-students",
+      "label": "Total students",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/total-students"
+    },
+    {
+      "key": "new-students",
+      "label": "New students",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/new-students"
+    },
+    {
+      "key": "onboarding-completion",
+      "label": "Finished onboarding (%)",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/onboarding-completion"
+    },
+    {
+      "key": "revenue",
+      "label": "Revenue (USD)",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/revenue",
+      "format": "money",
+      "sensitive": true
+    },
+    {
+      "key": "enrolments",
+      "label": "Paid enrolments",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/enrolments"
+    },
+    {
+      "key": "lessons-completed",
+      "label": "Lessons completed",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/lessons-completed"
+    },
+    {
+      "key": "certificates",
+      "label": "Certificates issued",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/certificates"
+    },
+    {
+      "key": "failed-payments",
+      "label": "Failed payments",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/failed-payments"
+    },
+    {
+      "key": "average-rating",
+      "label": "Average rating",
+      "type": "stat",
+      "path": "/workspace/admin/analytics/average-rating"
+    },
+    {
+      "key": "signups",
+      "label": "Signups",
+      "type": "timeseries",
+      "path": "/workspace/admin/analytics/signups"
+    },
+    {
+      "key": "revenue-over-time",
+      "label": "Revenue (USD)",
+      "type": "timeseries",
+      "path": "/workspace/admin/analytics/revenue-over-time",
+      "format": "money",
+      "sensitive": true
+    },
+    {
+      "key": "enrolments-over-time",
+      "label": "Paid enrolments",
+      "type": "timeseries",
+      "path": "/workspace/admin/analytics/enrolments-over-time"
+    },
+    {
+      "key": "top-programs",
+      "label": "Most enrolled programs",
+      "type": "breakdown",
+      "path": "/workspace/admin/analytics/top-programs"
+    },
+    {
+      "key": "revenue-by-program",
+      "label": "Revenue by program (USD)",
+      "type": "breakdown",
+      "path": "/workspace/admin/analytics/revenue-by-program",
+      "format": "money",
+      "sensitive": true
+    },
+    {
+      "key": "signup-funnel",
+      "label": "From signup to certificate",
+      "type": "funnel",
+      "path": "/workspace/admin/analytics/signup-funnel"
+    },
+    {
+      "key": "enrolments-by-status",
+      "label": "Enrolments by status",
+      "type": "breakdown",
+      "path": "/workspace/admin/analytics/enrolments-by-status"
+    }
   ]
 }

@@ -45,6 +45,9 @@ export class PaginatedSearchQueryDto extends PaginationQueryDto {
   search?: string;
 }
 
+export const SORT_ORDERS = ['asc', 'desc'] as const;
+export type SortOrder = (typeof SORT_ORDERS)[number];
+
 export type PageParams = Pick<PaginationQueryDto, 'page' | 'limit'>;
 
 export type PageMeta = {
