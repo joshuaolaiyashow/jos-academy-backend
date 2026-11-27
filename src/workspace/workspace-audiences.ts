@@ -19,6 +19,7 @@ import {
 
 export const AUDIENCE_KEYS = {
   STUDENTS: 'students',
+  LEARNERS: 'learners',
   INSTRUCTORS: 'instructors',
   SIGNUP_DROPOFFS: 'signup-dropoffs',
 } as const;
@@ -82,15 +83,17 @@ export const audienceWhere = (
   ...reachableWhere(query),
   ...(audience === AUDIENCE_KEYS.INSTRUCTORS
     ? { role: UserRole.INSTRUCTOR }
-    : {
-        role: UserRole.USER,
-        enrollments: {
-          some: {
-            status: { in: STUDENT_ENROLLMENT_STATUSES },
-            ...(query.program ? { courseId: query.program } : {}),
+    : audience === AUDIENCE_KEYS.LEARNERS
+      ? { role: UserRole.USER }
+      : {
+          role: UserRole.USER,
+          enrollments: {
+            some: {
+              status: { in: STUDENT_ENROLLMENT_STATUSES },
+              ...(query.program ? { courseId: query.program } : {}),
+            },
           },
-        },
-      }),
+        }),
 });
 
 @Injectable()
@@ -109,8 +112,8 @@ export class WorkspaceAudiencesService {
     return [
       {
         key: AUDIENCE_KEYS.STUDENTS,
-        label: 'Students',
-        description: 'Learners enrolled in a program',
+        label: 'Enrolled students',
+        description: 'Learners with a paid or finished enrollment',
         path: `/${WORKSPACE_AUDIENCES_PATH}/${AUDIENCE_KEYS.STUDENTS}`,
         kind: 'users',
         filters: [
@@ -123,6 +126,13 @@ export class WorkspaceAudiencesService {
             })),
           },
         ],
+      },
+      {
+        key: AUDIENCE_KEYS.LEARNERS,
+        label: 'All learners',
+        description: 'Every student account, enrolled or not',
+        path: `/${WORKSPACE_AUDIENCES_PATH}/${AUDIENCE_KEYS.LEARNERS}`,
+        kind: 'users',
       },
       {
         key: AUDIENCE_KEYS.INSTRUCTORS,

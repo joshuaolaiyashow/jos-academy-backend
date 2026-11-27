@@ -44,6 +44,12 @@ export class WorkspaceAudiencesController {
     return this.audiences.list(AUDIENCE_KEYS.STUDENTS, query);
   }
 
+  @Get(AUDIENCE_KEYS.LEARNERS)
+  @ApiOperation({ summary: 'Every student account, enrolled or not' })
+  listLearners(@Query() query: AudienceQueryDto): Promise<AudiencePage> {
+    return this.audiences.list(AUDIENCE_KEYS.LEARNERS, query);
+  }
+
   @Get(AUDIENCE_KEYS.INSTRUCTORS)
   @ApiOperation({ summary: 'Users with the instructor role' })
   listInstructors(@Query() query: AudienceQueryDto): Promise<AudiencePage> {
@@ -63,6 +69,7 @@ export class WorkspaceAudiencesController {
   // Opting out is per user, so every audience shares one unsubscribe.
   @Post([
     `${AUDIENCE_KEYS.STUDENTS}/unsubscribe`,
+    `${AUDIENCE_KEYS.LEARNERS}/unsubscribe`,
     `${AUDIENCE_KEYS.INSTRUCTORS}/unsubscribe`,
     `${AUDIENCE_KEYS.SIGNUP_DROPOFFS}/unsubscribe`,
   ])
