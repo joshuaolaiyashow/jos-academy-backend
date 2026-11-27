@@ -77,6 +77,15 @@ describe('audienceWhere', () => {
     ]);
   });
 
+  it('lists every student account for all learners, enrolled or not', () => {
+    expect(audienceWhere(AUDIENCE_KEYS.LEARNERS, baseQuery)).toEqual({
+      isSuspended: false,
+      email: { not: '' },
+      marketingOptOut: false,
+      role: UserRole.USER,
+    });
+  });
+
   it('lists instructors only, and drops the opt-out filter for service announcements', () => {
     const where = audienceWhere(AUDIENCE_KEYS.INSTRUCTORS, {
       ...baseQuery,
