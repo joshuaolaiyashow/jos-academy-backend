@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   AudienceQueryDto,
   AudienceUnsubscribeDto,
+  DropoffAudienceQueryDto,
   StudentAudienceQueryDto,
 } from './dto/audience.dto';
 import { AudienceExportGuard } from './workspace-auth.guard';
@@ -49,10 +50,21 @@ export class WorkspaceAudiencesController {
     return this.audiences.list(AUDIENCE_KEYS.INSTRUCTORS, query);
   }
 
-  // Opting out is per user, so both audiences share one unsubscribe.
+  @Get(AUDIENCE_KEYS.SIGNUP_DROPOFFS)
+  @ApiOperation({
+    summary: 'Recent signups who stopped before one funnel step',
+  })
+  listSignupDropoffs(
+    @Query() query: DropoffAudienceQueryDto,
+  ): Promise<AudiencePage> {
+    return this.audiences.listSignupDropoffs(query);
+  }
+
+  // Opting out is per user, so every audience shares one unsubscribe.
   @Post([
     `${AUDIENCE_KEYS.STUDENTS}/unsubscribe`,
     `${AUDIENCE_KEYS.INSTRUCTORS}/unsubscribe`,
+    `${AUDIENCE_KEYS.SIGNUP_DROPOFFS}/unsubscribe`,
   ])
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Opt a user out of marketing broadcasts' })

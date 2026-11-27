@@ -2,10 +2,16 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { EnrollmentStatus, Prisma, UserRole } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CHART_RANGES, CHART_RANGE_KEYS, rangeWindow } from './chart-window';
 import type {
   AudienceQueryDto,
+  DropoffAudienceQueryDto,
   StudentAudienceQueryDto,
 } from './dto/audience.dto';
+import {
+  SIGNUP_FUNNEL_STEPS,
+  WorkspaceAnalyticsService,
+} from './workspace-analytics.service';
 import {
   VALIDATION_FAILED,
   WORKSPACE_AUDIENCES_PATH,
@@ -14,6 +20,7 @@ import {
 export const AUDIENCE_KEYS = {
   STUDENTS: 'students',
   INSTRUCTORS: 'instructors',
+  SIGNUP_DROPOFFS: 'signup-dropoffs',
 } as const;
 export type AudienceKey = (typeof AUDIENCE_KEYS)[keyof typeof AUDIENCE_KEYS];
 
@@ -43,24 +50,11 @@ export type AudiencePage = {
   meta: { nextCursor: string | null; total: number };
 };
 
-export const audienceWhere = (
-  audience: AudienceKey,
-  query: AudienceQueryDto & Partial<Pick<StudentAudienceQueryDto, 'program'>>,
-): Prisma.UserWhereInput => ({
+// Anyone a broadcast may reach: active, with an email, not opted out (unless it's a service announcement), matching the search.
+const reachableWhere = (query: AudienceQueryDto): Prisma.UserWhereInput => ({
   isSuspended: false,
   email: { not: '' },
   ...(query.includeOptedOut ? {} : { marketingOptOut: false }),
-  ...(audience === AUDIENCE_KEYS.INSTRUCTORS
-    ? { role: UserRole.INSTRUCTOR }
-    : {
-        role: UserRole.USER,
-        enrollments: {
-          some: {
-            status: { in: STUDENT_ENROLLMENT_STATUSES },
-            ...(query.program ? { courseId: query.program } : {}),
-          },
-        },
-      }),
   ...(query.search
     ? {
         OR: [
@@ -81,9 +75,30 @@ export const audienceWhere = (
     : {}),
 });
 
+export const audienceWhere = (
+  audience: Exclude<AudienceKey, typeof AUDIENCE_KEYS.SIGNUP_DROPOFFS>,
+  query: AudienceQueryDto & Partial<Pick<StudentAudienceQueryDto, 'program'>>,
+): Prisma.UserWhereInput => ({
+  ...reachableWhere(query),
+  ...(audience === AUDIENCE_KEYS.INSTRUCTORS
+    ? { role: UserRole.INSTRUCTOR }
+    : {
+        role: UserRole.USER,
+        enrollments: {
+          some: {
+            status: { in: STUDENT_ENROLLMENT_STATUSES },
+            ...(query.program ? { courseId: query.program } : {}),
+          },
+        },
+      }),
+});
+
 @Injectable()
 export class WorkspaceAudiencesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly analytics: WorkspaceAnalyticsService,
+  ) {}
 
   /** Built per request so the program filter always lists the current cohorts. */
   async manifestEntries(): Promise<AudienceManifestEntry[]> {
@@ -116,11 +131,36 @@ export class WorkspaceAudiencesService {
         path: `/${WORKSPACE_AUDIENCES_PATH}/${AUDIENCE_KEYS.INSTRUCTORS}`,
         kind: 'users',
       },
+      {
+        key: AUDIENCE_KEYS.SIGNUP_DROPOFFS,
+        label: 'Signup funnel drop-offs',
+        description: 'Students who signed up but stopped before one step',
+        path: `/${WORKSPACE_AUDIENCES_PATH}/${AUDIENCE_KEYS.SIGNUP_DROPOFFS}`,
+        kind: 'users',
+        filters: [
+          {
+            key: 'step',
+            label: 'Stopped before',
+            options: SIGNUP_FUNNEL_STEPS.map((label, index) => ({
+              value: String(index + 1),
+              label,
+            })),
+          },
+          {
+            key: 'range',
+            label: 'Signed up in the last',
+            options: CHART_RANGE_KEYS.map((value) => ({
+              value,
+              label: CHART_RANGES[value].label,
+            })),
+          },
+        ],
+      },
     ];
   }
 
   async list(
-    audience: AudienceKey,
+    audience: Exclude<AudienceKey, typeof AUDIENCE_KEYS.SIGNUP_DROPOFFS>,
     query: AudienceQueryDto & Partial<Pick<StudentAudienceQueryDto, 'program'>>,
   ): Promise<AudiencePage> {
     // An unknown program must fail loudly: ignoring it would widen a cohort mail to every student.
@@ -133,7 +173,24 @@ export class WorkspaceAudiencesService {
         code: VALIDATION_FAILED,
       });
     }
-    const where = audienceWhere(audience, query);
+    return this.page(audienceWhere(audience, query), query);
+  }
+
+  /** Same cohort and step as the Overview's drop-off list, pulled live at send time. */
+  async listSignupDropoffs(
+    query: DropoffAudienceQueryDto,
+  ): Promise<AudiencePage> {
+    const ids = await this.analytics.signupDropoffIds(
+      rangeWindow(query.range),
+      query.step,
+    );
+    return this.page({ ...reachableWhere(query), id: { in: ids } }, query);
+  }
+
+  private async page(
+    where: Prisma.UserWhereInput,
+    query: AudienceQueryDto,
+  ): Promise<AudiencePage> {
     const [total, rows] = await Promise.all([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({

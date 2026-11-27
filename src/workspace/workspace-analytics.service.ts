@@ -3,20 +3,30 @@ import { Injectable } from '@nestjs/common';
 import {
   EnrollmentStatus,
   PaymentStatus,
+  Prisma,
   UserRole,
 } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { toPrismaPage } from '../utils/pagination';
 import {
   type ChartWindow,
   percent,
   previousWindow,
   toSeries,
 } from './chart-window';
+import type { FunnelPeopleQueryDto } from './dto/funnel-people-query.dto';
+import { toWorkspacePage, type WorkspacePage } from './workspace-page';
 
 type Stat = { value: number; previous?: number };
 type Point = { date: string; value: number };
 type Slice = { label: string; value: number };
 type BucketRow = { bucket: Date; value: number };
+type FunnelPerson = {
+  id: string;
+  email: string;
+  name: string;
+  signedUpAt: Date;
+};
 
 const BREAKDOWN_LIMIT = 10;
 // An enrolment counts once it's paid for; PENDING is a checkout that never finished.
@@ -28,6 +38,18 @@ const ENROLMENT_LABELS: Record<EnrollmentStatus, string> = {
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
 };
+
+// The signup funnel's steps after "Signed up", in journey order; a drop-off's `step` indexes into them from 1.
+export const SIGNUP_FUNNEL_STEPS = [
+  'Verified email',
+  'Finished onboarding',
+  'Started a checkout',
+  'Paid for a program',
+  'Completed a lesson',
+  'Completed a program',
+  'Got a certificate',
+] as const;
+const SIGNUP_FUNNEL_LABELS = ['Signed up', ...SIGNUP_FUNNEL_STEPS];
 
 const inWindow = ({ from, to }: ChartWindow) => ({ gte: from, lt: to });
 
@@ -210,10 +232,10 @@ export class WorkspaceAnalyticsService {
       .sort((a, b) => b.value - a.value);
   }
 
-  // Of the students who signed up in the window, how far each got, ever. A step only counts people who passed every
-  // step before it, so the bars always narrow.
+  // Who is still in after each step: stages[0] is everyone who signed up in the window, stages[n] those who passed
+  // steps 1..n, ever. A step only counts people who passed every step before it, so the stages always narrow.
   // shortcut: the cohort's ids are held in memory; switch to one SQL query once a single window holds ~100k signups.
-  async signupFunnel(window: ChartWindow): Promise<Slice[]> {
+  private async signupStages(window: ChartWindow): Promise<string[][]> {
     const cohort = await this.prisma.user.findMany({
       where: { role: UserRole.USER, createdAt: inWindow(window) },
       select: { id: true, isEmailVerified: true },
@@ -221,63 +243,81 @@ export class WorkspaceAnalyticsService {
     const userId = { in: cohort.map((user) => user.id) };
     const idsOf = async (rows: Promise<{ userId: string }[]>) =>
       new Set((await rows).map((row) => row.userId));
-    const [onboarded, checkout, paid, lessons, completed, certified] =
-      await Promise.all([
+    const enrolled = (where: Prisma.EnrollmentWhereInput = {}) =>
+      idsOf(
+        this.prisma.enrollment.findMany({
+          where: { userId, ...where },
+          select: { userId: true },
+        }),
+      );
+    const verified = new Set(
+      cohort.filter((user) => user.isEmailVerified).map((user) => user.id),
+    );
+    // Same order as SIGNUP_FUNNEL_STEPS.
+    const reached = [
+      verified,
+      ...(await Promise.all([
         idsOf(
           this.prisma.studentOnboarding.findMany({
             where: { userId, isCompleted: true },
             select: { userId: true },
           }),
         ),
-        idsOf(
-          this.prisma.enrollment.findMany({
-            where: { userId },
-            select: { userId: true },
-          }),
-        ),
-        idsOf(
-          this.prisma.enrollment.findMany({
-            where: { userId, status: { in: PAID_ENROLMENTS } },
-            select: { userId: true },
-          }),
-        ),
+        enrolled(),
+        enrolled({ status: { in: PAID_ENROLMENTS } }),
         idsOf(
           this.prisma.lessonProgress.findMany({
             where: { userId, completed: true },
             select: { userId: true },
           }),
         ),
-        idsOf(
-          this.prisma.enrollment.findMany({
-            where: { userId, status: EnrollmentStatus.COMPLETED },
-            select: { userId: true },
-          }),
-        ),
+        enrolled({ status: EnrollmentStatus.COMPLETED }),
         idsOf(
           this.prisma.certificate.findMany({
             where: { userId },
             select: { userId: true },
           }),
         ),
-      ]);
-    const verified = new Set(
-      cohort.filter((user) => user.isEmailVerified).map((user) => user.id),
-    );
-    const steps: [string, Set<string>][] = [
-      ['Verified email', verified],
-      ['Finished onboarding', onboarded],
-      ['Started a checkout', checkout],
-      ['Paid for a program', paid],
-      ['Completed a lesson', lessons],
-      ['Completed a program', completed],
-      ['Got a certificate', certified],
+      ])),
     ];
-    let remaining = cohort.map((user) => user.id);
-    const answer: Slice[] = [{ label: 'Signed up', value: remaining.length }];
-    for (const [label, reached] of steps) {
-      remaining = remaining.filter((id) => reached.has(id));
-      answer.push({ label, value: remaining.length });
+    const stages = [cohort.map((user) => user.id)];
+    for (const step of reached) {
+      stages.push(stages[stages.length - 1].filter((id) => step.has(id)));
     }
-    return answer;
+    return stages;
+  }
+
+  async signupFunnel(window: ChartWindow): Promise<Slice[]> {
+    const stages = await this.signupStages(window);
+    return stages.map((ids, index) => ({
+      label: SIGNUP_FUNNEL_LABELS[index],
+      value: ids.length,
+    }));
+  }
+
+  /** People from the window's signups who reached step `step - 1` but not `step` (1 = never verified their email). */
+  async signupDropoffIds(window: ChartWindow, step: number): Promise<string[]> {
+    const stages = await this.signupStages(window);
+    const passed = new Set(stages[step]);
+    return stages[step - 1].filter((id) => !passed.has(id));
+  }
+
+  async signupDropoffs(
+    query: FunnelPeopleQueryDto,
+  ): Promise<WorkspacePage<FunnelPerson>> {
+    const ids = await this.signupDropoffIds(query, query.step);
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      ...toPrismaPage(query),
+      select: { id: true, email: true, name: true, createdAt: true },
+    });
+    return toWorkspacePage(
+      rows.map(({ createdAt, ...person }) => ({
+        ...person,
+        signedUpAt: createdAt,
+      })),
+      { total: ids.length, page: query.page, limit: query.limit },
+    );
   }
 }

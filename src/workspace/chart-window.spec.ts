@@ -2,6 +2,7 @@ import {
   bucketStarts,
   percent,
   previousWindow,
+  rangeWindow,
   toSeries,
   windowProblem,
 } from './chart-window';
@@ -60,5 +61,19 @@ describe('chart-window', () => {
   it('reads 0 of 0 as 0%', () => {
     expect(percent(0, 0)).toBe(0);
     expect(percent(1, 3)).toBe(33);
+  });
+
+  it('turns an Overview range into the same UTC window the workspace asks for', () => {
+    const now = new Date('2026-11-27T22:30:00Z');
+    expect(rangeWindow('7d', now)).toEqual({
+      from: day('2026-11-21'),
+      to: day('2026-11-28'),
+      interval: 'day',
+    });
+    expect(rangeWindow('12m', now)).toEqual({
+      from: day('2025-12-01'),
+      to: day('2026-12-01'),
+      interval: 'month',
+    });
   });
 });

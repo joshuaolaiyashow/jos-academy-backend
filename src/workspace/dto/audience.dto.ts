@@ -3,6 +3,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -12,6 +13,8 @@ import {
 } from 'class-validator';
 
 import { MAX_SEARCH_LENGTH } from '../../utils/pagination';
+import { CHART_RANGE_KEYS, type ChartRange } from '../chart-window';
+import { SIGNUP_FUNNEL_STEPS } from '../workspace-analytics.service';
 
 export const DEFAULT_AUDIENCE_PAGE_SIZE = 100;
 export const MAX_AUDIENCE_PAGE_SIZE = 500;
@@ -65,6 +68,20 @@ export class StudentAudienceQueryDto extends AudienceQueryDto {
   @IsString()
   @MaxLength(MAX_ID_LENGTH)
   program?: string;
+}
+
+// Both are required: a drop-off mail without a step or range would reach a group nobody picked.
+export class DropoffAudienceQueryDto extends AudienceQueryDto {
+  @ApiProperty({ minimum: 1, maximum: SIGNUP_FUNNEL_STEPS.length })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(SIGNUP_FUNNEL_STEPS.length)
+  step: number;
+
+  @ApiProperty({ enum: CHART_RANGE_KEYS })
+  @IsIn(CHART_RANGE_KEYS)
+  range: ChartRange;
 }
 
 export class AudienceUnsubscribeDto {

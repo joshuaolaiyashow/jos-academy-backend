@@ -105,6 +105,7 @@ describe('JOS Workspace contract (e2e)', () => {
     ).toEqual([
       '/workspace/audiences/students',
       '/workspace/audiences/instructors',
+      '/workspace/audiences/signup-dropoffs',
     ]);
   });
 
@@ -120,6 +121,18 @@ describe('JOS Workspace contract (e2e)', () => {
     await http()
       .get('/workspace/admin/audit-log')
       .set(await asWorkspace(['audit-log:view']))
+      .expect(200);
+  });
+
+  it('lists funnel drop-offs only for students:view, since the list carries emails', async () => {
+    const dropoffs = `/workspace/admin/students/signup-funnel/people?from=2020-03-01&to=2020-03-08&interval=day&step=1`;
+    await http()
+      .get(dropoffs)
+      .set(await asWorkspace(['analytics:view']))
+      .expect(403);
+    await http()
+      .get(dropoffs)
+      .set(await asWorkspace(['students:view']))
       .expect(200);
   });
 
@@ -461,6 +474,38 @@ describe('JOS Workspace contract (e2e)', () => {
       });
       await enrol('unpaid', programId, EnrollmentStatus.PENDING);
       instructor = await seedUser(app, `${tag}-teacher`, UserRole.INSTRUCTOR);
+    });
+
+    it('pulls signup drop-offs for a step and range, live and opted-in only', async () => {
+      const unverified = await seedUser(app, `${tag}-new`, UserRole.USER);
+      const unverifiedOptedOut = await seedUser(
+        app,
+        `${tag}-new-out`,
+        UserRole.USER,
+      );
+      await prisma.user.updateMany({
+        where: { id: { in: [unverified.id, unverifiedOptedOut.id] } },
+        data: { isEmailVerified: false },
+      });
+      await prisma.user.update({
+        where: { id: unverifiedOptedOut.id },
+        data: { marketingOptOut: true },
+      });
+      const dropoffs = (params: string) =>
+        http()
+          .get(`/workspace/audiences/signup-dropoffs?search=${tag}&${params}`)
+          .set(exporter);
+      const neverVerified = await dropoffs('step=1&range=7d').expect(200);
+      expect(neverVerified.body).toEqual({
+        data: [{ email: unverified.email, name: expect.any(String) }],
+        meta: { nextCursor: null, total: 1 },
+      });
+      const announcement = await dropoffs(
+        'step=1&range=7d&includeOptedOut=true',
+      ).expect(200);
+      expect(announcement.body.meta.total).toBe(2);
+      await dropoffs('range=7d').expect(400);
+      await dropoffs('step=1&range=week').expect(400);
     });
 
     it('needs a workspace token with audiences:export and nothing else', async () => {

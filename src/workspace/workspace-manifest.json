@@ -1011,7 +1011,12 @@
       "key": "signup-funnel",
       "label": "From signup to certificate",
       "type": "funnel",
-      "path": "/workspace/admin/analytics/signup-funnel"
+      "path": "/workspace/admin/analytics/signup-funnel",
+      "people": {
+        "path": "/workspace/admin/students/signup-funnel/people",
+        "module": "students",
+        "audience": "signup-dropoffs"
+      }
     },
     {
       "key": "enrolments-by-status",
